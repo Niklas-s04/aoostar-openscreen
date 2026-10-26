@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>AOOSTAR · OpenScreen</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <a class="brand" href="#overview"><strong>AOOSTAR</strong><span>OpenScreen</span></a>
+    <div class="brand-meta"><span>Display Manager</span><span>WTR MAX</span></div>
+    <nav aria-label="Hauptnavigation" id="navigation"></nav>
+    <div class="sidebar-bottom"><span id="mode">Verbindung wird aufgebaut</span><span>960 × 376</span></div>
+  </aside>
+  <div class="workspace">
+    <header class="topbar"><button id="menu" class="mobile-menu" aria-label="Navigation öffnen">☰</button><span id="breadcrumb">Übersicht</span><span class="muted separator">/</span><span id="host-name" class="muted">AOOSTAR WTR MAX</span><span class="connection" id="connection">Wird geladen …</span></header>
+    <main id="main" tabindex="-1"><p class="loading">Dashboard wird geladen …</p></main>
+  </div>
+  <div id="notice" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

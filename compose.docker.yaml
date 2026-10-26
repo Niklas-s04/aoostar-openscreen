@@ -1,0 +1,34 @@
+# Optional local Docker source. The socket is held only by the restricted proxy.
+services:
+  openscreen:
+    networks:
+      - default
+      - docker-read
+  docker-proxy:
+    image: nginx:1.28-alpine
+    user: "10001:10001"
+    group_add:
+      - "${DOCKER_SOCKET_GID:?Set numeric Docker socket group}"
+    entrypoint: ["nginx", "-g", "daemon off;"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:2375/version"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    volumes:
+      - ./deploy/docker-proxy.conf:/etc/nginx/nginx.conf:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker-read
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+networks:
+  docker-read:
+    internal: true

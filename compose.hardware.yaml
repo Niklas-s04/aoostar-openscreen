@@ -1,0 +1,7 @@
+# Apply only after verifying the exact device and group on the Linux host.
+services:
+  openscreen:
+    devices:
+      - "${OPENSCREEN_DEVICE:?Set verified serial device}:/dev/aoostar"
+    group_add:
+      - "${OPENSCREEN_DEVICE_GID:?Set numeric device group}"
