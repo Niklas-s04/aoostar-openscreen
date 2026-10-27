@@ -1,8 +1,9 @@
 # AOOSTAR OpenScreen
 
 A self-hosted display dashboard for the AOOSTAR WTR Max 8845. OpenScreen runs in
-Docker, collects monitoring data from your homelab, and renders it for the built-in
-960 × 376 display. A web interface provides configuration and a live preview.
+Docker, collects monitoring data from your homelab, and renders editable dashboards
+for the built-in 960 × 376 display or a network browser player. A web interface
+provides configuration, a visual editor, and a live preview.
 
 This is an independent project, not an official AOOSTAR application.
 
@@ -12,7 +13,12 @@ validation. The current web interface is in German.
 
 ## Features
 
-- System, storage, services, and network pages with configurable rotation.
+- Free-placement editor with resizing, layers, alignment, grid snapping, undo/redo,
+  and configurable page rotation. New installations start with one readable page.
+- Text, metrics, icons, bars, rings, charts, shapes, clocks, images, and animated GIFs.
+- Eight editable templates and seven offline font families with bold/italic variants.
+- Independent canvas and output dimensions, rotation, and fit modes.
+- AOOSTAR serial output and a network browser player for other screen sizes.
 - Display preview using the same renderer as the hardware output.
 - Read-only data adapters for TrueNAS, Docker, Proxmox, and HTTP JSON endpoints.
 - Alerts for thresholds, service state, health, restart loops, and pool state.
@@ -150,6 +156,113 @@ capabilities, and no privileged mode. Do not add broad host mounts or weaken the
 settings to resolve a device-permission error. Use dedicated read-only API accounts
 and mount only the application's own data, isolated credentials, and display device.
 
+## Design your dashboard
+
+Open **Display** in the web interface. Select an element on the canvas or in the
+layer list, then drag it, resize it with its handle, or edit its numeric properties.
+Arrow keys move the selection by one pixel; Shift increases the step to ten.
+Use Undo/Redo, lock or hide layers, and arrange elements with the alignment controls.
+Only **Änderungen speichern** applies the draft to the running display.
+
+Choose a template as a starting point, or add an empty page. Templates become normal
+editable elements. Changing a page's dimensions proportionally adjusts its elements.
+Canvas dimensions and output dimensions are independent: the output can contain,
+crop, or stretch the page after rotation. Each side supports 64–3840 pixels, with a
+maximum of 8,294,400 pixels per canvas/output. AOOSTAR output remains fixed at 960 × 376.
+
+For a metric or chart, select a source, collection, and field. For example, use
+`metrics` / `cpu` / `%`, or `pools` / `percent` with a pool name or ID. Network counters
+`download` and `upload` are bytes per second; a factor of `0.000001` displays MB/s.
+Pool target `*` with `percent` displays capacity-weighted usage; workload target `*`
+with `running` counts running services, excluding nodes. Explicit sources are
+recommended when multiple systems expose the same fields, and required for wildcard
+collection charts when multiple sources are enabled. Charts retain the last
+120 observations in memory; missing samples produce gaps. Histories restart when
+the application restarts. Missing or stale readings are never replaced with zero.
+
+Upload PNG, JPEG, WebP, or GIF files through the media library. Uploads are limited
+to 10 MiB, 8 million input pixels, 60 frames, and 32 million decoded pixels across
+an animation. Media is re-encoded without metadata, at most 1920 pixels per side
+and 2,073,600 pixels per frame. The library holds up to 64 assets / 100 MiB.
+Referenced assets cannot be deleted until their saved page references are removed.
+Serial output sends full frames, so GIFs appear as a slower sequence rather than
+video-rate animation. The player and editor also refresh at a bounded rate.
+
+Limits are 20 pages, 48 elements per page, and 128 charts across all pages. Existing
+configurations retain their sources, alerts, hardware settings, and pages during
+migration. Legacy storage/services pages become editable aggregate views. Back up
+the application's data directory before upgrading; old releases cannot read the
+new editor configuration. Do not restore an old release against migrated data.
+
+## Other displays and connection types
+
+Under **Einstellungen → Ausgabeziel**, choose **Browser-Display**, set the output
+resolution, rotation, fit mode, and refresh interval, then save. Open `/display`
+on a device with a browser connected to your screen, such as an HDMI kiosk client.
+The player offers fullscreen after a user click and retries connection failures.
+It pulls completed PNG frames sequentially, without an accumulating frame queue.
+`/api/output.png` also exposes the current rendered output for compatible clients.
+
+The player uses the same network/host access restrictions as the administration UI.
+It is not a separate security boundary: admitted clients can still reach the
+configuration API. No GPU, framebuffer, USB, or host filesystem mount is needed
+for browser output. The browser runs on the display client, not inside this container.
+
+Direct serial support currently covers the AOOSTAR protocol only. A USB or serial
+connector alone does not identify a display protocol. Other direct outputs need an
+adapter that declares supported dimensions, pixel format, framing, acknowledgement,
+and reconnect behavior. Linux framebuffer and DRM/KMS outputs are not implemented;
+their device capabilities, pixel layout, and permissions must be verified per driver.
+See the [Linux framebuffer API](https://docs.kernel.org/fb/api.html) and
+[DRM/KMS documentation](https://docs.kernel.org/gpu/drm-kms.html) for those interfaces.
+
+## Request support for another device
+
+First check the [existing issues](https://github.com/Niklas-s04/aoostar-openscreen/issues)
+for your model. If none matches, [open a device-support request](https://github.com/Niklas-s04/aoostar-openscreen/issues/new)
+using the template below. Missing information is fine: mark it as unknown rather
+than guessing. Feature suggestions can use the same issue tracker; describe the
+intended workflow and an example of the expected result.
+
+```text
+Title: Device support: <manufacturer> <exact model / hardware revision>
+
+Device and display
+- Manufacturer / exact model / hardware revision:
+- Product page and official documentation links:
+- Display resolution and orientation (or unknown):
+- Connection: USB serial / USB HID / HDMI / network / other:
+- USB vendor:product ID, if applicable (not the unique serial number):
+
+Environment
+- Host OS and version:
+- Container platform and OpenScreen version / commit:
+- How the display is connected to the host:
+
+Existing software / protocol information
+- Official software or driver download links and version:
+- Supported Windows/Linux versions:
+- Public protocol documentation or relevant open-source projects:
+- Known commands, pixel format, refresh limits (or unknown):
+
+Current behavior
+- What already works with OpenScreen or the original software:
+- Steps tried and actual result:
+- Expected result / intended dashboard use:
+- Sanitized error messages or relevant log excerpts:
+
+Testing
+- Can you test an experimental adapter on this device?
+- Can you provide sanitized captures or photos if requested?
+```
+
+Issues are public. Remove passwords, API keys, tokens, private URLs, IP addresses,
+hostnames, device serial numbers, and unrelated personal data from logs and photos.
+Link to official downloads instead of attaching proprietary installers or complete
+configuration backups. Do not post credentials or grant remote access. A request
+does not guarantee support: a direct adapter needs enough protocol evidence and
+testing on the actual hardware. A browser player may already cover the use case.
+
 ## Development
 
 Python 3.13 and uv are required for local development.
@@ -161,7 +274,7 @@ uv run pytest -q
 ```
 
 Set PLAYWRIGHT_EXECUTABLE_PATH to use an existing Chromium installation.
-To exercise a real Docker stack with port 8080 available:
+To exercise a disposable Docker stack on a free local port and isolated subnet:
 
 ```sh
 uv run python scripts/docker_smoke.py

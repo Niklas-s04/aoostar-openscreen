@@ -1,12 +1,15 @@
 from contextlib import asynccontextmanager
 import os
+import asyncio
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from .alerts import AlertEngine
 from .collectors import collect
-from .models import Config
+from .models import Config, Page
+from .templates import FONTS, SYMBOLS, TEMPLATES
+from .outputs import OUTPUTS
 from .render import png
 from .runtime import Runtime
 from .access import AccessPolicy, same_origin
@@ -27,6 +30,8 @@ def create_app(data_dir=None, secret_dir=None, demo=None, start_workers=True):
         runtime.close()
     app=FastAPI(lifespan=lifespan,docs_url=None,redoc_url=None,openapi_url=None)
     app.state.runtime=runtime
+    media_gate = asyncio.Semaphore(2)
+    request_gate = asyncio.Semaphore(8)
 
     @app.middleware('http')
     async def access(request, call_next):
@@ -50,18 +55,37 @@ def create_app(data_dir=None, secret_dir=None, demo=None, start_workers=True):
                 length=int(request.headers.get('content-length','0'))
             except ValueError:
                 return JSONResponse({'detail':'Ungültige Anfragegröße'},status_code=400)
-            if length>262144:
+            limit = 10*1024*1024 if request.url.path=='/api/assets' and request.method=='POST' else 1024*1024
+            if length<0 or length>limit:
                 return JSONResponse({'detail':'Konfiguration zu groß'},status_code=413)
+            # Check actual bytes too: Content-Length is optional and untrusted.
+            body = bytearray()
+            async for chunk in request.stream():
+                if len(body)+len(chunk)>limit:
+                    return JSONResponse({'detail':'Anfrage zu groß'},status_code=413)
+                body.extend(chunk)
+            request._body = bytes(body)
         response=await call_next(request)
         response.headers['Cache-Control']='no-store'
         response.headers['X-Content-Type-Options']='nosniff'
         response.headers['Referrer-Policy']='no-referrer'
-        response.headers['Content-Security-Policy']="default-src 'self'; style-src 'self'; img-src 'self' data:; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        response.headers['Content-Security-Policy']="default-src 'self'; style-src 'self'; img-src 'self' data: blob:; script-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         return response
+
+    @app.middleware('http')
+    async def bounded_requests(request, call_next):
+        if request_gate.locked():
+            return JSONResponse({'detail':'Server ausgelastet, bitte erneut versuchen'},status_code=429)
+        async with request_gate:
+            return await call_next(request)
 
     @app.get('/')
     def index():
         return FileResponse(STATIC/'index.html')
+
+    @app.get('/display')
+    def player():
+        return FileResponse(STATIC/'player.html')
 
     @app.get('/favicon.ico')
     def favicon():
@@ -89,6 +113,57 @@ def create_app(data_dir=None, secret_dir=None, demo=None, start_workers=True):
     @app.get('/api/preview.png')
     def preview(page:str|None=None):
         return Response(png(runtime.image(page)),media_type='image/png')
+
+    @app.get('/api/editor/catalog')
+    def editor_catalog():
+        with runtime.lock:
+            output = runtime.config.output
+            return {'width':output.width,'height':output.height,'outputs':OUTPUTS,
+                    'fonts':FONTS,'symbols':SYMBOLS,'templates':TEMPLATES}
+
+    @app.get('/api/output.png')
+    def output_frame():
+        return Response(png(runtime.image()),media_type='image/png')
+
+    @app.post('/api/editor/preview')
+    def editor_preview(page:Page):
+        try:
+            return Response(png(runtime.image(draft=page)),media_type='image/png')
+        except ValueError:
+            raise HTTPException(400,'Entwurf enthält ungültige Verknüpfungen') from None
+
+    @app.get('/api/assets')
+    def assets_list():
+        return runtime.assets.list()
+
+    @app.post('/api/assets')
+    async def assets_upload(request:Request, name:str='image'):
+        from starlette.concurrency import run_in_threadpool
+        async with media_gate:
+            try:
+                return await run_in_threadpool(runtime.assets.upload, await request.body(), name)
+            except ValueError as exc:
+                raise HTTPException(400,str(exc)) from None
+            except OSError:
+                raise HTTPException(500,'Bild konnte nicht gespeichert werden') from None
+
+    @app.get('/api/assets/{asset_id}')
+    def asset_get(asset_id:str):
+        try:
+            return FileResponse(runtime.assets.get_path(asset_id))
+        except (ValueError, FileNotFoundError):
+            raise HTTPException(404,'Bild nicht gefunden') from None
+
+    @app.delete('/api/assets/{asset_id}')
+    def asset_delete(asset_id:str):
+        with runtime.lock:
+            if any(e.asset_id==asset_id for p in runtime.config.pages for e in p.elements):
+                raise HTTPException(409,'Bild wird noch von einer Seite verwendet')
+            try:
+                runtime.assets.delete(asset_id)
+            except (ValueError, FileNotFoundError):
+                raise HTTPException(404,'Bild nicht gefunden') from None
+        return {'ok':True}
 
     @app.post('/api/sources/{source_id}/test')
     def source_test(source_id:str):

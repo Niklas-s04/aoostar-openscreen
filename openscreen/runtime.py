@@ -7,9 +7,11 @@ import time
 from .alerts import AlertEngine
 from .collectors import collect
 from .models import Config, Snapshot
-from .protocol import DisplayTransport
-from .render import render
+from .render import render, bound_value
 from .access import validate_config
+from .assets import AssetStore
+from .outputs import prepare_frame, open_transport
+import copy
 
 
 class Runtime:
@@ -22,6 +24,9 @@ class Runtime:
         if not demo:
             validate_config(self.config)
         self.snapshots = {}
+        self.history = {}
+        self.assets = AssetStore(Path(data_dir)/'assets')
+        self.render_lock = threading.Lock()
         self.engine = AlertEngine()
         self.stop = threading.Event()
         self.display = {'state':'disabled','last_sent':None,'error':'','frame_seconds':None}
@@ -34,6 +39,10 @@ class Runtime:
         if self.demo and config.hardware_enabled:
             raise ValueError('Hardware ist im Demo-Modus deaktiviert')
         with self.lock:
+            for page in config.pages:
+                for element in page.elements:
+                    if element.asset_id:
+                        self.assets.get_path(element.asset_id)
             self.path.parent.mkdir(parents=True,exist_ok=True)
             temporary = self.path.with_suffix('.tmp')
             with temporary.open('w',encoding='utf-8') as handle:
@@ -43,6 +52,7 @@ class Runtime:
             os.replace(temporary,self.path)
             changed = {s.id for s in config.sources if next((o for o in self.config.sources if o.id==s.id),None)!=s}
             self.snapshots = {k:v for k,v in self.snapshots.items() if k not in changed and any(s.id==k for s in config.sources)}
+            self.history = {k:v for k,v in self.history.items() if k in self.snapshots}
             self.config = config.model_copy(deep=True)
 
     def page(self, config, now):
@@ -76,11 +86,43 @@ class Runtime:
             sources.append({'id':s.id,'name':s.name,'kind':s.kind,'state':state,'snapshot':snap.model_dump() if snap else None})
         with self.lock:
             display=dict(self.display)
-        return {'demo':self.demo,'page':self.page(config,now),'sources':sources,'alerts':alerts,'display':display,'uptime':now-self.started,'now':now,'version':'0.1.0'}
+        if config.output.kind == 'browser':
+            display.update(state='player',error='')
+        return {'demo':self.demo,'page':self.page(config,now),'sources':sources,'alerts':alerts,'display':display,'uptime':now-self.started,'now':now,'version':'0.2.0'}
 
-    def image(self, page=None):
+    def image(self, page=None, draft=None):
         config,snapshots,alerts,now=self.state()
-        return render(config,snapshots,alerts,page or self.page(config,now),now,self.demo)
+        if draft is not None:
+            draft = draft.model_copy(update={'enabled':True})
+            config = Config.model_validate(config.model_copy(update={'pages':[draft], 'selected_page':draft.id}).model_dump())
+            alerts = []
+            page = draft.id
+        with self.lock:
+            history = copy.deepcopy(self.history)
+        with self.render_lock:
+            image = render(config,snapshots,alerts,page or self.page(config,now),now,self.demo,history=history,assets=self.assets)
+            return image if draft is not None else prepare_frame(image,config.output)
+
+    def record_history(self, source_id, snapshot, now):
+        series = self.history.setdefault(source_id, {})
+        values = {key: snapshot.metrics.get(key) for key in list(snapshot.metrics)[:32]}
+        for page in self.config.pages:
+            for element in page.elements:
+                binding = element.binding
+                if element.kind != 'chart' or (binding.source_id or page.source_id) not in ('',source_id):
+                    continue
+                key = binding.metric if binding.collection == 'metrics' else f'{binding.collection}:{binding.target}:{binding.metric}'
+                values[key] = bound_value(binding.model_copy(update={'scale':1}), [snapshot])
+        for key in list(series):
+            if key not in values:
+                del series[key]
+        interval = next((s.interval for s in self.config.sources if s.id==source_id),15)
+        for key, value in values.items():
+            points = series.setdefault(key, [])
+            if points and now-points[-1][0]>interval*2:
+                points.append([now-0.001,None])
+            points.append([now, value if snapshot.ok and isinstance(value,(int,float)) else None])
+            del points[:-120]
 
     def poll(self):
         futures={}
@@ -108,6 +150,7 @@ class Runtime:
                                 if not result.ok and previous:
                                     result=previous.model_copy(update={'ok':False,'error':result.error})
                                 self.snapshots[source.id]=result
+                                self.record_history(source.id, result, time.time())
                         due[source.id]=time.monotonic()+source.interval
                         del futures[source.id]
                     if source.id not in futures and time.monotonic()>=due.get(source.id,0):
@@ -120,7 +163,7 @@ class Runtime:
         while not self.stop.is_set():
             with self.lock:
                 config=self.config.model_copy(deep=True)
-            if not config.hardware_enabled or self.demo:
+            if not config.hardware_enabled or self.demo or config.output.kind != 'aoostar':
                 if transport:
                     transport.close()
                     transport=None
@@ -133,7 +176,7 @@ class Runtime:
                 if transport is None or transport.device!=config.device:
                     if transport:
                         transport.close()
-                    transport=DisplayTransport(config.device)
+                    transport=open_transport(config.output, config.device)
                     previous=None
                 image=self.image()
                 frame=image.tobytes()
@@ -153,7 +196,7 @@ class Runtime:
                 with self.lock:
                     self.display.update(state='error',error='Displayverbindung fehlgeschlagen ('+type(exc).__name__+')')
                 self.stop.wait(3)
-            self.stop.wait(0.5)
+            self.stop.wait(config.output.interval)
         if transport:
             transport.close()
 

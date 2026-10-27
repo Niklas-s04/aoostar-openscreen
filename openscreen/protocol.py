@@ -1,4 +1,4 @@
-"""Protocol recovered statically from AOOSTAR-X Linux 1.3.6. See analysis/PROTOKOLL.md."""
+"""AOOSTAR WTR Max serial display protocol (AOOSTAR-X Linux 1.3.6)."""
 from array import array
 import sys
 import time

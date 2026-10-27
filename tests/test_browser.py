@@ -33,9 +33,9 @@ def demo_server(tmp_path_factory):
         process.wait(timeout=10)
 
 
-def test_navigation_editing_persistence_and_mobile(demo_server):
+def test_navigation_editing_persistence_and_mobile(demo_server, tmp_path):
     errors=[]
-    artifacts=Path('artifacts')
+    artifacts=tmp_path
     artifacts.mkdir(exist_ok=True)
     with sync_playwright() as p:
         browser=p.chromium.launch(executable_path=os.getenv('PLAYWRIGHT_EXECUTABLE_PATH'))
