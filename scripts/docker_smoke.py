@@ -19,11 +19,15 @@ import httpx
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--keep', action='store_true')
+    parser.add_argument('--broker', action='store_true', help='Also exercise the isolated display broker')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     project = 'openscreen-check-' + uuid.uuid4().hex[:8]
     env = dict(os.environ, DOCKER_SOCKET_GID='0', OPENSCREEN_ALLOWED_SOURCE_URLS='http://docker-proxy:2375')
     compose = ['docker', 'compose', '-p', project, '-f', 'compose.yaml', '-f', 'compose.docker.yaml']
+    if args.broker:
+        env['OPENSCREEN_DEVICE_GID']=os.getenv('OPENSCREEN_DEVICE_GID','0')
+        compose.extend(['-f','compose.broker.yaml'])
 
     def run(*command, capture=True):
         return subprocess.run(command, cwd=root, env=env, check=True, text=True,
@@ -79,6 +83,38 @@ def main():
             draft=client.post('/api/editor/preview',json=config['pages'][0],headers=headers).raise_for_status().content
             assert int.from_bytes(draft[16:20],'big')==960
             assert 'serial' in client.get('/api/displays').raise_for_status().json()
+            if args.broker:
+                inventory=client.get('/api/displays').raise_for_status().json()
+                assert inventory['broker']['available'],inventory['broker']['error']
+                boundary='''import os,stat,socket
+from pathlib import Path
+assert os.getuid()==10001
+assert Path('/run/openscreen-broker/broker.sock').stat().st_mode & 0o777 == 0o600
+assert Path('/run/openscreen-broker').stat().st_mode & 0o777 == 0o700
+assert 'CapEff:\\t0000000000000000' in Path('/proc/self/status').read_text()
+with open('/host-dev/null','wb',buffering=0) as f: f.write(b'char-device-readonly-mount-check')
+assert len(socket.if_nameindex())==1
+print('Broker: UID, socket permissions, zero capabilities, isolated network, readonly char-device mount passed')
+'''
+                print(run(*compose,'exec','-T','display-broker','python','-c',boundary).strip())
+                web_boundary='''from pathlib import Path
+assert not Path('/host-dev').exists()
+assert not Path('/var/run/docker.sock').exists()
+try:
+    Path('/run/openscreen-broker/write-test').write_text('must fail')
+except OSError:
+    pass
+else:
+    raise AssertionError('Web broker mount is writable')
+'''
+                run(*compose,'exec','-T','openscreen','python','-c',web_boundary)
+                run(*compose,'restart','display-broker',capture=False)
+                for _ in range(30):
+                    if client.get('/api/displays').raise_for_status().json()['broker']['available']:
+                        break
+                    time.sleep(1)
+                else:
+                    raise AssertionError('Broker did not recover its socket after restart')
             client.post('/api/displays/report',json={'id':'a'*32,'width':1280,'height':720},headers=headers).raise_for_status()
             config['output']={'kind':'browser','width':960,'height':376,'player_id':'a'*32,'auto_size':True}
             client.put('/api/config',json=config,headers=headers).raise_for_status()

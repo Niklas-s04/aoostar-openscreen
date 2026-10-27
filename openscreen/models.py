@@ -153,7 +153,7 @@ class Rule(Model):
 
 
 class Output(Model):
-    kind: Literal['aoostar','browser'] = 'aoostar'
+    kind: Literal['aoostar','browser','broker'] = 'aoostar'
     width: int = Field(default=960, ge=64, le=3840)
     height: int = Field(default=376, ge=64, le=3840)
     rotation: Literal[0,90,180,270] = 0
@@ -166,7 +166,7 @@ class Output(Model):
     def capabilities(self):
         if self.width*self.height>8_294_400:
             raise ValueError('Output exceeds 8.3 million pixels')
-        if self.kind == 'aoostar' and (self.width,self.height)!=(960,376):
+        if self.kind in ('aoostar','broker') and (self.width,self.height)!=(960,376):
             raise ValueError('AOOSTAR serial output requires 960 × 376')
         return self
 

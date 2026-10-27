@@ -1,0 +1,55 @@
+# Linux Docker hosts only. Do not combine with compose.hardware.yaml.
+services:
+  openscreen:
+    user: "10001:10001"
+    environment:
+      OPENSCREEN_BROKER_SOCKET: /run/openscreen-broker/broker.sock
+    volumes:
+      - openscreen-broker:/run/openscreen-broker:ro
+    depends_on:
+      display-broker:
+        condition: service_started
+  display-broker:
+    stop_grace_period: 60s
+    build: .
+    image: aoostar-openscreen:local
+    command: [python, -m, openscreen.broker, --device-root, /host-dev, --sys-root, /host-sys, --socket, /run/openscreen-broker/broker.sock]
+    restart: unless-stopped
+    user: "10001:10001"
+    group_add:
+      - "${OPENSCREEN_DEVICE_GID:?Set the verified numeric serial-device group ID}"
+    network_mode: none
+    volumes:
+      - type: bind
+        source: /dev
+        target: /host-dev
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /sys
+        target: /host-sys
+        read_only: true
+        bind:
+          create_host_path: false
+      - openscreen-broker:/run/openscreen-broker
+    device_cgroup_rules:
+      - "c 166:* rw"
+      - "c 188:* rw"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.5
+    healthcheck:
+      test: [CMD, python, -c, "import httpx; c=httpx.Client(transport=httpx.HTTPTransport(uds='/run/openscreen-broker/broker.sock'),base_url='http://broker',timeout=2); c.get('/healthz').raise_for_status()"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+volumes:
+  openscreen-broker:

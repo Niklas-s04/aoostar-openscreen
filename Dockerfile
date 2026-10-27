@@ -8,7 +8,8 @@ FROM python:3.13-slim-bookworm
 RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core fonts-liberation2 ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -g 10001 openscreen && useradd -u 10001 -g openscreen -M openscreen \
-    && mkdir -p /data && chown openscreen:openscreen /data
+    && mkdir -p /data /run/openscreen-broker && chown openscreen:openscreen /data /run/openscreen-broker \
+    && chmod 0700 /run/openscreen-broker
 WORKDIR /app
 COPY --from=build /app/.venv /app/.venv
 COPY openscreen /app/openscreen

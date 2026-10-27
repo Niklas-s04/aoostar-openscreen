@@ -93,6 +93,18 @@ class PlayerRegistry:
 
 def inspect_output(config, registry, existing_device=None):
     output=config.output.model_copy(deep=True)
+    if output.kind=='broker':
+        from .broker_client import selected
+        try:
+            device=selected(config.device)
+            return {'ok':True,'device':device['device'],'output':output.model_dump(),
+                    'size_source':'adapter-profile','message':'Broker-Display bestätigt; AOOSTAR-Profil 960 × 376.'}
+        except (ValueError,OSError) as exc:
+            return {'ok':False,'output':output.model_dump(),'size_source':'adapter-profile',
+                    'message':'Broker nicht bereit oder Display nicht eindeutig bestätigt.'}
+        except Exception:
+            return {'ok':False,'output':output.model_dump(),'size_source':'adapter-profile',
+                    'message':'Broker-Verbindung fehlgeschlagen.'}
     if output.kind=='browser':
         player=next((p for p in registry.list() if p['id']==output.player_id),None)
         if player and output.auto_size:

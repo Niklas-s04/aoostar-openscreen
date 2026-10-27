@@ -113,7 +113,15 @@ def create_app(data_dir=None, secret_dir=None, demo=None, start_workers=True):
 
     @app.get('/api/displays')
     def displays():
+        broker={'devices':[],'candidates':[],'available':False,'error':''}
+        if not runtime.demo and os.getenv('OPENSCREEN_BROKER_SOCKET'):
+            from .broker_client import inventory
+            try:
+                broker.update(inventory(),available=True)
+            except Exception:
+                broker['error']='Broker nicht erreichbar. Socket-Freigabe und Dienst prüfen.'
         return {'serial':[] if runtime.demo else serial_displays(),'players':runtime.players.list(),
+                'broker':broker,
                 'note':'Nur im Container sichtbare Geräte und aktive Browser-Player. Keine Netzwerk-Portsuche.'}
 
     @app.post('/api/displays/report')
@@ -126,7 +134,7 @@ def create_app(data_dir=None, secret_dir=None, demo=None, start_workers=True):
 
     @app.post('/api/displays/probe')
     def display_probe(config:Config):
-        if runtime.demo and config.output.kind=='aoostar':
+        if runtime.demo and config.output.kind in ('aoostar','broker'):
             return {'ok':False,'output':config.output.model_dump(),'size_source':'adapter-profile',
                     'message':'Demo: keine Hardwareprüfung. AOOSTAR-Profil: 960 × 376.'}
         try:

@@ -8,6 +8,8 @@ from .protocol import DisplayTransport
 
 
 OUTPUTS = [
+    {'id':'broker','name':'Automatic display broker','transport':'unix-socket',
+     'width':960,'height':376,'pixel_format':'RGB565 LE','push':True},
     {'id':'aoostar','name':'AOOSTAR USB / Serial','transport':'serial',
      'width':960,'height':376,'pixel_format':'RGB565 LE','push':True},
     {'id':'browser','name':'Browser / Network player','transport':'http-pull',
@@ -34,6 +36,9 @@ def prepare_frame(image, output):
 
 
 def open_transport(output, device):
+    if output.kind == 'broker':
+        from .broker_client import BrokerTransport
+        return BrokerTransport(device)
     if output.kind == 'aoostar':
         return DisplayTransport(device)
     raise ValueError('This output is served through the network player')

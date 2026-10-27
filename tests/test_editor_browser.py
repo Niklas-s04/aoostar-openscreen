@@ -1,9 +1,38 @@
 """Real browser coverage for canvas drafts, persistence, guards and media."""
 import io
 import os
+import json
 from PIL import Image
 from playwright.sync_api import sync_playwright, expect
 from test_browser import demo_server
+
+
+def test_broker_selection_shows_only_confirmed_devices(demo_server):
+    with sync_playwright() as p:
+        browser=p.chromium.launch(executable_path=os.getenv('PLAYWRIGHT_EXECUTABLE_PATH'))
+        page=browser.new_page(viewport={'width':1440,'height':1000})
+        device='broker:'+'a'*32
+        data={'serial':[],'players':[],'broker':{'available':True,'error':'','devices':[
+            {'device':device,'name':'AOOSTAR verified','width':960,'height':376,'accessible':True}],
+            'candidates':[{'name':'Other adapter','state':'unsupported','reason':'Unknown protocol'}]}}
+        page.route('**/api/displays',lambda route:route.fulfill(content_type='application/json',body=json.dumps(data)))
+        page.goto(demo_server+'/#settings')
+        page.get_by_label('Ausgabetyp',exact=True).select_option('broker')
+        expect(page.locator('#display-devices option')).to_have_count(2)
+        expect(page.locator('#broker-candidates')).to_contain_text('Other adapter: unsupported')
+        page.get_by_label('Serielles Gerät',exact=True).fill(device)
+        expect(page.get_by_label('Ausgabebreite',exact=True)).to_have_value('960')
+        expect(page.get_by_label('Ausgabebreite',exact=True)).to_be_disabled()
+        page.get_by_role('button',name='Einstellungen speichern',exact=True).click()
+        expect(page.get_by_role('button',name='Einstellungen speichern',exact=True)).to_be_enabled()
+        page.reload()
+        expect(page.get_by_label('Ausgabetyp',exact=True)).to_have_value('broker')
+        expect(page.get_by_label('Serielles Gerät',exact=True)).to_have_value(device)
+        # Restore an ordinary output so the other workflows share no broker dependency.
+        page.get_by_label('Ausgabetyp',exact=True).select_option('aoostar')
+        page.get_by_role('button',name='Einstellungen speichern',exact=True).click()
+        expect(page.get_by_role('button',name='Einstellungen speichern',exact=True)).to_be_enabled()
+        browser.close()
 
 
 def test_editor_drafts_interactions_and_media(demo_server):

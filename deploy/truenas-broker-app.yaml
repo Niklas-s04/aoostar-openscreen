@@ -1,0 +1,78 @@
+# Replace every YOUR_* placeholder before deploying. See TRUENAS.md.
+# Create the data path with UID 10001 access and import the image first.
+services:
+  openscreen:
+    image: aoostar-openscreen:local
+    pull_policy: never
+    restart: unless-stopped
+    user: "10001:10001"
+    ports:
+      - "YOUR_NAS_IP:8088:8080"
+    environment:
+      OPENSCREEN_ALLOWED_NETWORKS: 127.0.0.0/8,::1/128,YOUR_LAN_CIDR
+      OPENSCREEN_ALLOWED_HOSTS: localhost,127.0.0.1,::1,YOUR_NAS_IP
+      # Optional sources must match this operator-owned allowlist exactly.
+      OPENSCREEN_ALLOWED_SOURCE_URLS: ""
+      OPENSCREEN_BROKER_SOCKET: /run/openscreen-broker/broker.sock
+    volumes:
+      - type: bind
+        source: /mnt/YOUR_POOL/apps/openscreen/data
+        target: /data
+        bind:
+          create_host_path: false
+
+      - openscreen-broker:/run/openscreen-broker:ro
+    depends_on:
+      display-broker:
+        condition: service_started
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+  display-broker:
+    stop_grace_period: 60s
+    image: aoostar-openscreen:local
+    pull_policy: never
+    command: [python, -m, openscreen.broker, --device-root, /host-dev, --sys-root, /host-sys, --socket, /run/openscreen-broker/broker.sock]
+    restart: unless-stopped
+    user: "10001:10001"
+    group_add:
+      - "YOUR_DEVICE_GID"
+    network_mode: none
+    volumes:
+      - type: bind
+        source: /dev
+        target: /host-dev
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: /sys
+        target: /host-sys
+        read_only: true
+        bind:
+          create_host_path: false
+      - openscreen-broker:/run/openscreen-broker
+    device_cgroup_rules:
+      - "c 166:* rw"
+      - "c 188:* rw"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.5
+    healthcheck:
+      test: [CMD, python, -c, "import httpx; c=httpx.Client(transport=httpx.HTTPTransport(uds='/run/openscreen-broker/broker.sock'),base_url='http://broker',timeout=2); c.get('/healthz').raise_for_status()"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+volumes:
+  openscreen-broker:

@@ -6,6 +6,12 @@ when TrueNAS runs in a virtual machine.
 
 The application is experimental. Physical frame output still needs validation.
 
+The optional display broker handles USB serial discovery and reconnects within
+the Custom App. No host Python packages, `apt` commands, systemd units, custom
+udev rules, or developer mode are required. TrueNAS is an appliance: keep the
+software inside the app image and use supported Apps management. See the
+[TrueNAS developer-mode guidance](https://www.truenas.com/docs/scale/scaletutorials/systemsettings/advanced/developermode/).
+
 ## 1. Build and transfer the image
 
 Build on a machine running Docker:
@@ -51,7 +57,10 @@ verified. A USB device without a serial node is not sufficient for this driver.
 ## 3. Install the Custom App
 
 Go to **Apps → Discover Apps → ⋮ → Install via YAML** and name the app openscreen.
-Paste [deploy/truenas-custom-app.yaml](deploy/truenas-custom-app.yaml).
+For automatic USB discovery, paste
+[deploy/truenas-broker-app.yaml](deploy/truenas-broker-app.yaml).
+For direct mapping of one device, use the alternative
+[deploy/truenas-custom-app.yaml](deploy/truenas-custom-app.yaml). Choose one template.
 
 Replace every placeholder before saving:
 
@@ -60,11 +69,17 @@ Replace every placeholder before saving:
 | YOUR_NAS_IP | NAS LAN IPv4 address |
 | YOUR_LAN_CIDR | Trusted management subnet, or a single client address with /32 |
 | YOUR_POOL | Pool name; adjust the entire data path if necessary |
-| YOUR_DISPLAY_ID | Verified filename under /dev/serial/by-id |
+| YOUR_DISPLAY_ID | Direct-mapping template only: verified filename under /dev/serial/by-id |
 | YOUR_DEVICE_GID | Verified numeric serial-device group ID |
 
-The directory must already exist. Port 8088 must be free. For a WebUI-only first
-start, remove both devices and group_add until the device has been identified.
+The directory must already exist. Port 8088 must be free. The broker template uses
+the same locally imported image for both services and a dedicated named volume for
+its Unix socket. Both services run as UID/GID 10001. The image initializes the
+socket directory with owner 10001 and mode 0700; a fresh named volume inherits it.
+The web service mounts this volume read-only and receives no host devices.
+
+For a WebUI-only first start, use the direct-mapping template and remove both
+`devices` and `group_add` until the device has been identified.
 
 Official instructions:
 [Installing Custom Apps](https://apps.truenas.com/managing-apps/installing-custom-apps/).
@@ -76,16 +91,39 @@ external traffic appear local; separate guest and IoT networks at the router.
 
 ## 4. Enable the display
 
-In **Einstellungen** (Settings), set the device to /dev/aoostar and enable hardware
-output. Start with the system page and a 20-second rotation interval. Compare the
-preview, connection status, last-frame timestamp, and actual physical image.
+With the broker template, open **Einstellungen** (Settings), choose output kind
+`broker`, refresh device discovery, select a confirmed display or `auto`, enable
+output, and save. `auto` requires an unambiguous compatible device. Unknown USB
+serial candidates are shown as unsupported and are not actively probed. Currently
+only USB **0416:90a1** with a successful AOOSTAR protocol ACK is selectable. The
+adapter profile fixes the size at **960 × 376**; it does not query arbitrary display
+dimensions. Metadata and ACK confirmation do not validate the physical image.
 
-The container path is /dev/aoostar regardless of the host device name. Resolution
-and baud rate are implemented by the driver. Stop any manufacturer software that
-uses the same serial port. USB reconnection may require restarting the app.
+With the direct-mapping template, set the device to `/dev/aoostar` and enable
+hardware output. Start with a 20-second rotation interval. Compare the preview,
+connection status, last-frame timestamp, and actual physical image.
 
-For permission errors, check the device mapping and numeric group. Do not enable
+Stop any manufacturer software that uses the same serial port. The broker watches
+the host device directories so USB reconnection does not require container
+recreation or a new device mapping. Direct mapping may require an app restart.
+
+The broker has no network, published port, Docker socket, or extra capabilities.
+It binds `/dev` and `/sys` read-only for discovery and permits read/write access
+only to USB ACM/serial character-device classes (major 166/188), subject to Unix
+permissions. These wildcard minor rules allow replacement device nodes after
+hotplug. They do not grant disk access or permission to create device nodes. A
+read-only `/dev` mount still allows character-device I/O. The broker can inspect
+host device metadata and may access other USB serial ports in the permitted group;
+the adapter whitelist restricts normal application use. USB identities are
+spoofable. The web service only connects to the mode-0600 Unix socket through its
+read-only shared volume. See [Docker device cgroup rules](https://docs.docker.com/reference/compose-file/services/#device_cgroup_rules).
+
+For permission errors, check the device mapping or broker mounts and numeric group. Do not enable
 privileged mode. A failed handshake requires hardware/protocol investigation.
+If the broker cannot create its socket, inspect the dedicated socket volume's
+owner and ensure the current image was imported; do not grant root privileges or
+change the data dataset's permissions as a workaround. The broker healthcheck
+checks the Unix API, not the physical screen.
 
 ## 5. Optional monitoring credentials
 
@@ -117,7 +155,10 @@ Local runtime metrics do not necessarily describe the NAS host. The TrueNAS
 adapter currently provides apps and pools, not system-container, SMART, or
 remote CPU/network metrics. A Docker socket mount is not required for this setup.
 
-Only mount the app data directory, optional isolated API credentials, and the
-single display device. Do not mount host root, pools, host proc/sys, or Docker
-socket into the application. To stop using the display, disable hardware output
-or stop the Custom App; keep the data directory for later use.
+Only mount app data and optional isolated API credentials into the web service,
+plus either the broker socket volume or the single directly mapped display.
+Keep host root, pools, host proc/sys, and the Docker socket out of the web service.
+The broker's documented `/dev` and `/sys` mounts are confined to its separate
+container. To stop using the display, disable hardware output or stop the Custom
+App; keep the data directory for later use. Removing the broker service and its
+socket mount/environment revokes broker access without deleting app data.

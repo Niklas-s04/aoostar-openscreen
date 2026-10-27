@@ -52,6 +52,54 @@ below. The example uses a locally imported image, not a published registry image
 
 ## Connect the display
 
+### Automatic discovery through the optional broker (Linux)
+
+The broker discovers USB serial devices and reconnects after unplug/replug without
+changing the Compose file or restarting containers. The web application receives
+only a local Unix socket; the separate broker owns serial access. The default
+deployment remains WebUI-only. This requires a Linux Docker host with the physical
+USB device available; Docker Desktop alone does not expose the host's USB ports.
+
+Identify the display's serial node and verify its numeric group as shown below,
+then start the broker overlay:
+
+```sh
+export OPENSCREEN_DEVICE_GID=YOUR_VERIFIED_GROUP_ID
+docker compose -f compose.yaml -f compose.broker.yaml up -d --build
+```
+
+Do not combine this overlay with `compose.hardware.yaml`. In **Einstellungen**,
+choose the broker output (`broker`), refresh discovery, select a confirmed device
+or `auto`, enable output, and save. Automatic selection requires an unambiguous
+compatible display. Only devices with supported metadata and a successful protocol
+ACK are offered as confirmed displays. Unknown candidates are reported as unsupported
+and receive no active protocol probes. Currently the only adapter is AOOSTAR/Synwit
+USB **0416:90a1**, with fixed **960 × 376** dimensions. An ACK establishes operational
+protocol compatibility; the physical image, colors, orientation, and reconnect
+behavior still need testing on the actual display.
+
+The broker binds host `/dev` and `/sys` read-only for hotplug discovery and has
+character-device read/write rules only for USB ACM/serial majors 166 and 188.
+A read-only device-directory mount does **not** prevent writes to character
+devices. Device cgroup rules, Unix permissions, and the adapter allowlist control
+access. The broker can see host device metadata and may access other USB serial
+devices permitted by the same group; it is a security-sensitive component. USB
+identities can be spoofed and are not cryptographic authentication. The web
+container has no device mounts or device permissions from this overlay.
+
+Both containers run as UID/GID 10001 with dropped capabilities and a read-only
+root filesystem. The broker has no network access, published port, Docker socket,
+or host service installation. Its socket directory is mode 0700 and the socket
+mode 0600; the web mounts the shared volume read-only, which still permits Unix
+socket connections. The image supplies the directory owner for a fresh Docker
+named volume. Stop the broker to revoke device access; disable broker output or
+switch to browser output before removing the overlay. Preserve the data volume.
+
+See [Docker device rules](https://docs.docker.com/reference/compose-file/services/#device_cgroup_rules)
+and the [TrueNAS broker installation](TRUENAS.md) for deployment details.
+
+### Direct mapping of one verified device
+
 The Docker host must have access to the physical display. On Linux, identify the
 serial device corresponding to USB vendor/product ID **0416:90a1**. Verify its
 device path and numeric group ID rather than assuming a tty name or group.
@@ -77,7 +125,7 @@ and enable hardware output. No other process should use the serial port.
 The display uses RGB565 at 1,500,000 baud. A full frame takes approximately six
 seconds if limited by conventional UART throughput. This is intended for status
 pages, not video. Brightness, fan, and power-limit control are not implemented.
-After reconnecting USB, restarting the container may be necessary.
+With direct mapping, reconnecting USB may require restarting the container.
 
 ## Configure data sources
 
@@ -225,10 +273,10 @@ Browser dimensions are estimates based on screen size and pixel ratio, not EDID
 measurements. Browser zoom, OS scaling, and multi-monitor behavior can affect them.
 Reports outside the application's supported pixel limits are not registered.
 
-Docker only exposes devices explicitly passed into the container. Discovery cannot
+In direct-mapping mode, Docker only exposes devices explicitly passed into the container. Discovery cannot
 see arbitrary host USB devices or discover disconnected hardware; no privileged
-mode or broad `/dev` mount is required or recommended. Prefer the existing hardware
-Compose overlay, which maps your verified host device to `/dev/aoostar`. For a
+mode or broad `/dev` mount is required in the web container. The hardware
+Compose overlay maps your verified host device to `/dev/aoostar`. For a
 different manually specified serial path, pass that device into the container and
 set `OPENSCREEN_ALLOWED_DEVICES` to its exact container path. This comma-separated
 allowlist supports serial paths such as `/dev/ttyACM0`, `/dev/ttyUSB0`,
@@ -305,6 +353,12 @@ configuration backups. Do not post credentials or grant remote access. A request
 does not guarantee support: a direct adapter needs enough protocol evidence and
 testing on the actual hardware. A browser player may already cover the use case.
 
+Discovery polls every three seconds, with bounded exponential backoff for failed
+handshakes. Verified connections stay open exclusively. Frame transfers are
+serialized per device and rejected when busy rather than queued. Reconnection
+changes the connection generation so even an unchanged dashboard is resent.
+Device selections survive tty renumbering on the same physical USB port.
+
 ## Development
 
 Python 3.13 and uv are required for local development.
@@ -321,6 +375,15 @@ To exercise a disposable Docker stack on a free local port and isolated subnet:
 ```sh
 uv run python scripts/docker_smoke.py
 ```
+
+To include the broker boundary and restart checks, run
+`uv run python scripts/docker_smoke.py --broker`. On Linux, set
+`OPENSCREEN_DEVICE_GID` to the verified USB serial group first. The smoke test
+uses group 0 by default for Docker Desktop; do not treat that as a production
+permission setting. The broker probes supported devices visible to that Docker
+host, so use a development machine with no competing display software.
+Linux-specific socket, sysfs, and pseudo-terminal checks run with
+`uv run pytest tests/test_broker.py tests/test_broker_client.py`.
 
 The integration script removes its own test stack afterward. Pass --keep to leave
 a successful stack running. It currently uses Docker socket GID 0 for the tested

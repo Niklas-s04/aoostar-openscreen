@@ -46,7 +46,7 @@ class Runtime:
                             or config.hardware_enabled!=self.config.hardware_enabled)
             if output_changed:
                 result=inspect_output(config,self.players,existing_device=self.config.device)
-                if not self.demo and config.hardware_enabled and config.output.kind=='aoostar' and not result['ok']:
+                if not self.demo and config.hardware_enabled and config.output.kind in ('aoostar','broker') and not result['ok']:
                     raise ValueError(result['message'])
                 config.output=type(config.output).model_validate(result['output'])
             for page in config.pages:
@@ -98,7 +98,7 @@ class Runtime:
             display=dict(self.display)
         if config.output.kind == 'browser':
             display.update(state='player',error='')
-        return {'demo':self.demo,'page':self.page(config,now),'sources':sources,'alerts':alerts,'display':display,'uptime':now-self.started,'now':now,'version':'0.2.1'}
+        return {'demo':self.demo,'page':self.page(config,now),'sources':sources,'alerts':alerts,'display':display,'uptime':now-self.started,'now':now,'version':'0.3.0'}
 
     def image(self, page=None, draft=None):
         config,snapshots,alerts,now=self.state()
@@ -169,11 +169,12 @@ class Runtime:
 
     def output(self):
         transport=None
+        transport_kind=None
         previous=None
         while not self.stop.is_set():
             with self.lock:
                 config=self.config.model_copy(deep=True)
-            if not config.hardware_enabled or self.demo or config.output.kind != 'aoostar':
+            if not config.hardware_enabled or self.demo or config.output.kind not in ('aoostar','broker'):
                 if transport:
                     transport.close()
                     transport=None
@@ -183,14 +184,15 @@ class Runtime:
                 self.stop.wait(0.5)
                 continue
             try:
-                if transport is None or transport.device!=config.device:
+                if transport is None or transport.device!=config.device or transport_kind!=config.output.kind:
                     if transport:
                         transport.close()
                     transport=open_transport(config.output, config.device)
+                    transport_kind=config.output.kind
                     previous=None
                 image=self.image()
                 frame=image.tobytes()
-                if frame!=previous:
+                if frame!=previous or (hasattr(transport,'needs_refresh') and transport.needs_refresh()):
                     with self.lock:
                         self.display['state']='sending'
                     start=time.monotonic()
