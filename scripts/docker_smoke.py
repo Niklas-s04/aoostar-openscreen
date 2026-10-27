@@ -78,7 +78,9 @@ def main():
             assert int.from_bytes(preview[20:24], 'big') == 376
             draft=client.post('/api/editor/preview',json=config['pages'][0],headers=headers).raise_for_status().content
             assert int.from_bytes(draft[16:20],'big')==960
-            config['output']={'kind':'browser','width':1280,'height':720}
+            assert 'serial' in client.get('/api/displays').raise_for_status().json()
+            client.post('/api/displays/report',json={'id':'a'*32,'width':1280,'height':720},headers=headers).raise_for_status()
+            config['output']={'kind':'browser','width':960,'height':376,'player_id':'a'*32,'auto_size':True}
             client.put('/api/config',json=config,headers=headers).raise_for_status()
             network_frame=client.get('/api/output.png').raise_for_status().content
             assert int.from_bytes(network_frame[16:20],'big')==1280

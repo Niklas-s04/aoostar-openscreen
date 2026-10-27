@@ -48,10 +48,10 @@ class DisplayTransport:
 
     def connect(self):
         import serial
-        from serial.tools.list_ports import comports
         device = self.device
         if device == 'auto':
-            matches = [p.device for p in comports() if (p.vid, p.pid) == (0x0416, 0x90a1)]
+            from .discovery import serial_displays
+            matches = [p['device'] for p in serial_displays()]
             if len(matches) != 1:
                 raise OSError('Select one display device explicitly')
             device = matches[0]

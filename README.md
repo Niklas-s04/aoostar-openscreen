@@ -196,6 +196,48 @@ new editor configuration. Do not restore an old release against migrated data.
 
 ## Other displays and connection types
 
+### Discover devices and determine the output size
+
+In **Einstellungen**, the **Serielles Gerät** field offers detected devices in its
+dropdown while still accepting a manually typed path. **Displays suchen** refreshes
+the list. Detection uses USB metadata for known AOOSTAR/Synwit candidates and also
+includes the explicitly mapped `/dev/aoostar` device. Identical paths/aliases are
+deduplicated. An unknown USB serial port is not assumed to be a compatible display.
+USB identity is a candidate match, not a successful protocol handshake.
+
+**Ausgabe prüfen / Größe erkennen** checks the selected output without saving.
+Saving settings performs the same check. AOOSTAR dimensions come from its known
+960 × 376 adapter profile; there is no verified command for querying arbitrary
+serial-display dimensions. The check verifies presence and permissions without
+sending speculative commands. The normal output connection performs the AOOSTAR
+handshake and reports its status separately.
+
+For browser output, first open `/display` on the actual display client. Its short
+Player ID appears beside the fullscreen button. Refresh discovery and select that
+player under **Browser-Player als Größenreferenz**. With automatic size enabled,
+the reported size is applied when settings are saved. Disable automatic size to
+keep your manual width and height. Browser reports expire after 90 seconds without
+a heartbeat, are kept only in memory, and do not change saved settings on their own.
+An offline player leaves the manually specified/last saved size unchanged.
+The selection supplies a size reference; all players still mirror the same output.
+
+Browser dimensions are estimates based on screen size and pixel ratio, not EDID
+measurements. Browser zoom, OS scaling, and multi-monitor behavior can affect them.
+Reports outside the application's supported pixel limits are not registered.
+
+Docker only exposes devices explicitly passed into the container. Discovery cannot
+see arbitrary host USB devices or discover disconnected hardware; no privileged
+mode or broad `/dev` mount is required or recommended. Prefer the existing hardware
+Compose overlay, which maps your verified host device to `/dev/aoostar`. For a
+different manually specified serial path, pass that device into the container and
+set `OPENSCREEN_ALLOWED_DEVICES` to its exact container path. This comma-separated
+allowlist supports serial paths such as `/dev/ttyACM0`, `/dev/ttyUSB0`,
+`/dev/serial/by-id/...`, or native Windows `COM3`; it does not grant Docker device
+permissions or make an unsupported protocol compatible. Block devices, ordinary
+files, and network serial URLs are rejected.
+
+### Use a browser display
+
 Under **Einstellungen → Ausgabeziel**, choose **Browser-Display**, set the output
 resolution, rotation, fit mode, and refresh interval, then save. Open `/display`
 on a device with a browser connected to your screen, such as an HDMI kiosk client.

@@ -7,7 +7,8 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from .alerts import AlertEngine
 from .collectors import collect
-from .models import Config, Page
+from .models import Config, Page, PlayerReport
+from .discovery import serial_displays, inspect_output
 from .templates import FONTS, SYMBOLS, TEMPLATES
 from .outputs import OUTPUTS
 from .render import png
@@ -109,6 +110,31 @@ def create_app(data_dir=None, secret_dir=None, demo=None, start_workers=True):
     @app.get('/api/status')
     def status():
         return runtime.status()
+
+    @app.get('/api/displays')
+    def displays():
+        return {'serial':[] if runtime.demo else serial_displays(),'players':runtime.players.list(),
+                'note':'Nur im Container sichtbare Geräte und aktive Browser-Player. Keine Netzwerk-Portsuche.'}
+
+    @app.post('/api/displays/report')
+    def player_report(report:PlayerReport):
+        try:
+            runtime.players.report(report)
+        except ValueError as exc:
+            raise HTTPException(429,str(exc)) from None
+        return {'ok':True}
+
+    @app.post('/api/displays/probe')
+    def display_probe(config:Config):
+        if runtime.demo and config.output.kind=='aoostar':
+            return {'ok':False,'output':config.output.model_dump(),'size_source':'adapter-profile',
+                    'message':'Demo: keine Hardwareprüfung. AOOSTAR-Profil: 960 × 376.'}
+        try:
+            with runtime.lock:
+                existing_device=runtime.config.device
+            return inspect_output(config,runtime.players,existing_device=existing_device)
+        except ValueError as exc:
+            raise HTTPException(400,str(exc)) from None
 
     @app.get('/api/preview.png')
     def preview(page:str|None=None):

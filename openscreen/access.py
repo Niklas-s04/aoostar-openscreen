@@ -36,9 +36,10 @@ def validate_source(source):
         raise ValueError('Datenquellen-URL ist nicht in OPENSCREEN_ALLOWED_SOURCE_URLS freigegeben')
 
 
-def validate_config(config):
-    if config.device not in ('auto', '/dev/aoostar'):
-        raise ValueError('Als Gerät sind nur auto und /dev/aoostar erlaubt')
+def validate_config(config, existing_device=None):
+    from .discovery import allowed_device
+    if config.device!=existing_device and not allowed_device(config.device):
+        raise ValueError('Gerät nicht freigegeben: erkanntes AOOSTAR-Gerät, /dev/aoostar oder OPENSCREEN_ALLOWED_DEVICES verwenden')
     for source in config.sources:
         validate_source(source)
 

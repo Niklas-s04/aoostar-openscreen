@@ -1,10 +1,26 @@
 'use strict';
 const output=document.querySelector('#output'),status=document.querySelector('#player-status');
 let interval=1,failures=0,objectURL=null,configAt=0;
+let playerId,reportedAt=0;
+try{playerId=sessionStorage.getItem('openscreen-player');}catch(error){}
+if(!/^[a-f0-9]{32}$/.test(playerId||'')){
+ playerId=Array.from(crypto.getRandomValues(new Uint8Array(16)),n=>n.toString(16).padStart(2,'0')).join('');
+ try{sessionStorage.setItem('openscreen-player',playerId);}catch(error){}
+}
+const identity=document.createElement('span');identity.textContent='Player '+playerId.slice(0,8);
+document.querySelector('.player-controls').prepend(identity);
+async function reportSize(){
+ if(Date.now()-reportedAt<30000)return;
+ reportedAt=Date.now();
+ const width=Math.round(screen.width*devicePixelRatio),height=Math.round(screen.height*devicePixelRatio);
+ if(width<64||height<64||width>3840||height>3840||width*height>8294400)return;
+ try{await fetch('/api/displays/report',{method:'POST',headers:{'Content-Type':'application/json','X-OpenScreen':'1'},body:JSON.stringify({id:playerId,width,height}),signal:AbortSignal.timeout(5000)});}catch(error){}
+}
 async function refresh(){
  let delay=interval*1000;
  try{
   if(document.hidden){setTimeout(refresh,1000);return;}
+  await reportSize();
   if(Date.now()-configAt>30000){const response=await fetch('/api/config',{cache:'no-store',signal:AbortSignal.timeout(10000)});if(!response.ok)throw Error('Konfiguration nicht erreichbar');const config=await response.json();interval=Math.max(.5,Math.min(60,config.output?.interval||1));delay=interval*1000;configAt=Date.now();}
   const response=await fetch('/api/output.png?t='+Date.now(),{cache:'no-store',signal:AbortSignal.timeout(20000)});
   if(!response.ok)throw Error('Display nicht erreichbar');

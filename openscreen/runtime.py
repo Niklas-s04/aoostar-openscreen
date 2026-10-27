@@ -11,6 +11,7 @@ from .render import render, bound_value
 from .access import validate_config
 from .assets import AssetStore
 from .outputs import prepare_frame, open_transport
+from .discovery import PlayerRegistry, inspect_output
 import copy
 
 
@@ -20,9 +21,10 @@ class Runtime:
         self.secret_dir = secret_dir
         self.demo = demo
         self.lock = threading.RLock()
+        self.players = PlayerRegistry()
         self.config = Config.model_validate_json(self.path.read_text(encoding='utf-8')) if self.path.exists() else Config()
         if not demo:
-            validate_config(self.config)
+            validate_config(self.config,existing_device=self.config.device)
         self.snapshots = {}
         self.history = {}
         self.assets = AssetStore(Path(data_dir)/'assets')
@@ -34,11 +36,19 @@ class Runtime:
         self.threads = []
 
     def save(self, config):
+        config=config.model_copy(deep=True)
         if not self.demo:
-            validate_config(config)
+            validate_config(config,existing_device=self.config.device)
         if self.demo and config.hardware_enabled:
             raise ValueError('Hardware ist im Demo-Modus deaktiviert')
         with self.lock:
+            output_changed=(config.output!=self.config.output or config.device!=self.config.device
+                            or config.hardware_enabled!=self.config.hardware_enabled)
+            if output_changed:
+                result=inspect_output(config,self.players,existing_device=self.config.device)
+                if not self.demo and config.hardware_enabled and config.output.kind=='aoostar' and not result['ok']:
+                    raise ValueError(result['message'])
+                config.output=type(config.output).model_validate(result['output'])
             for page in config.pages:
                 for element in page.elements:
                     if element.asset_id:
@@ -88,7 +98,7 @@ class Runtime:
             display=dict(self.display)
         if config.output.kind == 'browser':
             display.update(state='player',error='')
-        return {'demo':self.demo,'page':self.page(config,now),'sources':sources,'alerts':alerts,'display':display,'uptime':now-self.started,'now':now,'version':'0.2.0'}
+        return {'demo':self.demo,'page':self.page(config,now),'sources':sources,'alerts':alerts,'display':display,'uptime':now-self.started,'now':now,'version':'0.2.1'}
 
     def image(self, page=None, draft=None):
         config,snapshots,alerts,now=self.state()

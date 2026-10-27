@@ -159,6 +159,8 @@ class Output(Model):
     rotation: Literal[0,90,180,270] = 0
     fit: Literal['contain','cover','stretch'] = 'contain'
     interval: float = Field(default=1, ge=0.5, le=60)
+    auto_size: bool = True
+    player_id: str = Field(default='', pattern=r'^(|[a-f0-9]{32})$')
 
     @model_validator(mode='after')
     def capabilities(self):
@@ -166,6 +168,18 @@ class Output(Model):
             raise ValueError('Output exceeds 8.3 million pixels')
         if self.kind == 'aoostar' and (self.width,self.height)!=(960,376):
             raise ValueError('AOOSTAR serial output requires 960 × 376')
+        return self
+
+
+class PlayerReport(Model):
+    id: str = Field(pattern=r'^[a-f0-9]{32}$')
+    width: int = Field(ge=64,le=3840)
+    height: int = Field(ge=64,le=3840)
+
+    @model_validator(mode='after')
+    def bounded_pixels(self):
+        if self.width*self.height>8_294_400:
+            raise ValueError('Player resolution exceeds pixel budget')
         return self
 
 
