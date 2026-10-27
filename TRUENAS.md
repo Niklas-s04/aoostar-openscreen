@@ -127,7 +127,7 @@ checks the Unix API, not the physical screen.
 
 ## 5. Optional monitoring credentials
 
-Display output does not require NAS API access. To show TrueNAS apps and pools,
+Display output does not require NAS API access. To show TrueNAS host data, apps and pools,
 create a separate API key with the necessary read permissions.
 
 Create an isolated secrets directory containing only that key and, if needed,
@@ -152,8 +152,21 @@ allowlist and redeploy. The web interface cannot change that allowlist.
 Existing sources not present in it prevent startup.
 
 Local runtime metrics do not necessarily describe the NAS host. The TrueNAS
-adapter currently provides apps and pools, not system-container, SMART, or
-remote CPU/network metrics. A Docker socket mount is not required for this setup.
+adapter uses a persistent versioned WebSocket for host CPU, RAM, temperature and
+network/disk rates. Apps, pools and system containers depend on available read
+methods and permissions; unavailable or stale features remain unknown and are
+identified in the source details. System containers remain distinct from apps.
+Set `network_interface=eth0` in the source field/options area to select exactly
+one interface; absent a selection, multiple interfaces are not summed. SMART is
+not implemented. A Docker socket mount is not required for this setup.
+
+In 0.4.0, browser size references measure the player rendering area, not native
+panel resolution. Broker modes are checked against adapter capabilities; unknown
+protocols remain unsupported. Use the temporary settings test image to inspect
+the actual screen: confirm or cancel within 60 seconds; cancellation or timeout
+restores prior output. A successful protocol ACK alone does not validate colors,
+cropping or orientation. These changes require a separately authorized app update;
+development and automated tests do not deploy anything to the NAS.
 
 Only mount app data and optional isolated API credentials into the web service,
 plus either the broker socket volume or the single directly mapped display.

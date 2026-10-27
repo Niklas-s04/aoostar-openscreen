@@ -15,7 +15,9 @@ import time
 
 from fastapi import FastAPI, HTTPException, Request
 
-from .protocol import ON, SIZE, frame_packets, write_all
+from .protocol import SIZE
+from .adapters import ADAPTERS
+from dataclasses import replace
 
 FRAME_BYTES = SIZE[0] * SIZE[1] * 2
 TTY_NAME = re.compile(r'tty(?:ACM|USB)[0-9]+\Z')
@@ -32,6 +34,7 @@ class Candidate:
     rdev: int
     supported: bool
     sys_identity: tuple = ()
+    adapter_id: str = 'aoostar'
 
 
 @dataclass
@@ -47,7 +50,8 @@ class BusyError(Exception):
 
 
 class BrokerManager:
-    def __init__(self, device_root='/host-dev', sys_root='/host-sys'):
+    def __init__(self, device_root='/host-dev', sys_root='/host-sys', registry=ADAPTERS):
+        self.registry = registry
         self.device_root = Path(device_root).resolve()
         self.sys_root = Path(sys_root).resolve()
         self.connections = {}
@@ -97,8 +101,11 @@ class BrokerManager:
         identity = str(usb.relative_to(self.sys_root)) + '\0' + serial + '\0' + interface
         key = hashlib.sha256(identity.encode()).hexdigest()[:32]
         info = path.stat()
+        adapters = [a for a in self.registry.adapters.values()
+                    if a.broker_serial and a.matches_usb(vendor,product)]
+        adapter_id = adapters[0].id if len(adapters)==1 else ''
         return Candidate(key, tty, path, usb, os.makedev(major, minor),
-                         (vendor, product) == ('0416', '90a1'), (info.st_dev, info.st_ino))
+                         bool(adapter_id), (info.st_dev, info.st_ino),adapter_id)
 
     def enumerate(self):
         result = {}
@@ -122,6 +129,9 @@ class BrokerManager:
         import serial
         if not candidate.supported or self.inspect(candidate.tty) != candidate:
             raise OSError('Adapter identity changed')
+        adapter = self.registry.get(candidate.adapter_id)
+        if not adapter.broker_serial:
+            raise OSError('Adapter does not support serial broker access')
         if os.major(candidate.rdev) not in (166, 188):
             raise OSError('Unsupported device major')
         path = self.device_root / candidate.tty
@@ -137,17 +147,14 @@ class BrokerManager:
             if self.inspect(candidate.tty) != candidate:
                 raise OSError('Adapter identity changed')
             # pyserial opens the already checked inode; a path replacement cannot redirect it.
-            port = serial.Serial(f'/proc/self/fd/{fd}', 1500000, timeout=1,
+            port = serial.Serial(f'/proc/self/fd/{fd}', adapter.baudrate, timeout=1,
                                  write_timeout=1, exclusive=True)
             actual = os.fstat(port.fileno())
             if (actual.st_dev, actual.st_ino, actual.st_rdev) != (opened.st_dev, opened.st_ino, opened.st_rdev):
                 raise OSError('Serial identity mismatch')
             if self.inspect(candidate.tty) != candidate:
                 raise OSError('Adapter identity changed')
-            port.reset_input_buffer()
-            write_all(port, ON, time.monotonic() + 2)
-            if b'A' not in port.read(64):
-                raise OSError('Display handshake not acknowledged')
+            adapter.probe_connection(port,time.monotonic() + 2)
             return port
         except Exception:
             if port is not None:
@@ -210,19 +217,45 @@ class BrokerManager:
 
     def snapshot(self):
         with self.lock:
-            devices = [{'id': key, 'device': 'broker:' + key, 'name': 'AOOSTAR WTR Max',
-                        'kind': 'broker', 'width': SIZE[0], 'height': SIZE[1],
+            devices = []
+            for key in sorted(self.connections):
+                caps = self.capabilities(key)
+                mode = caps.modes[0]
+                devices.append({'id': key, 'device': 'broker:' + key, 'name': caps.adapter_id,
+                        'kind': 'broker', 'width': mode.width, 'height': mode.height,
                         'size_source': 'adapter-profile', 'verified': True,
                         'accessible': True, 'state': 'ready',
-                        'generation': self.connections[key].generation}
-                       for key in sorted(self.connections)]
+                        'generation': self.connections[key].generation,
+                        'capabilities': caps.to_dict()})
             return {'version': 1, 'devices': devices,
                     'candidates': [dict(item) for item in self.candidates.values()][:MAX_DEVICES]}
 
-    def send(self, key, frame):
-        if len(frame) != FRAME_BYTES:
-            raise ValueError('Wrong frame size')
+    def capabilities(self, key):
         with self.lock:
+            item = self.connections.get(key)
+            if item is None:
+                raise KeyError(key)
+            adapter = self.registry.get(item.candidate.adapter_id)
+            return replace(adapter.get_capabilities(key),probe_status='protocol-confirmed')
+
+    def frame_mode(self, key, mode_id='', generation=None):
+        """Resolve only from the current trusted connection, never client dimensions."""
+        with self.lock:
+            caps = self.capabilities(key)
+            item = self.connections[key]
+            if generation is not None and generation != item.generation:
+                raise ValueError('Display generation changed')
+            matches = [m for m in caps.modes if m.id==mode_id]
+            if not mode_id and caps.adapter_id=='aoostar':
+                matches = list(caps.modes)
+            if len(matches)!=1:
+                raise ValueError('Unsupported display mode')
+            return caps, matches[0]
+
+    def send(self, key, frame, mode_id='', generation=None):
+        with self.lock:
+            caps, mode = self.frame_mode(key,mode_id,generation)
+            caps.validate_frame(mode,frame)
             item = self.connections.get(key)
             if item is None:
                 raise KeyError(key)
@@ -230,8 +263,7 @@ class BrokerManager:
                 raise BusyError()
         try:
             deadline = time.monotonic() + 30
-            for packet in frame_packets(frame):
-                write_all(item.port, packet, deadline)
+            self.registry.get(item.candidate.adapter_id).send_encoded(item.port,frame,mode,deadline)
         except Exception:
             with self.lock:
                 if self.connections.get(key) is item:
@@ -291,6 +323,19 @@ def create_app(manager=None, start_worker=True):
     async def frame(key: str, request: Request):
         if not DEVICE_ID.fullmatch(key):
             raise HTTPException(404, 'Unknown display')
+        mode_id = request.query_params.get('mode','')
+        generation = request.query_params.get('generation')
+        if len(mode_id)>64 or (generation is not None and not DEVICE_ID.fullmatch(generation)):
+            raise HTTPException(400, 'Invalid frame negotiation')
+        try:
+            caps, mode = manager.frame_mode(key,mode_id,generation)
+        except KeyError:
+            raise HTTPException(404, 'Unknown display') from None
+        except ValueError:
+            raise HTTPException(400, 'Unsupported or stale display mode') from None
+        bytes_per_pixel = {'rgb565-le':2,'rgb888':3}.get(mode.pixel_format)
+        exact_bytes = mode.width*mode.height*bytes_per_pixel if bytes_per_pixel else None
+        limit = min(caps.max_frame_bytes,exact_bytes) if exact_bytes else caps.max_frame_bytes
         headers = request.scope['headers']
         lengths = [value for name, value in headers if name.lower() == b'content-length']
         if any(name.lower() == b'transfer-encoding' for name, _ in headers) or len(lengths) != 1:
@@ -301,9 +346,9 @@ def create_app(manager=None, start_worker=True):
             length = int(lengths[0])
         except ValueError:
             raise HTTPException(400, 'Invalid Content-Length') from None
-        if length > FRAME_BYTES:
+        if length > limit:
             raise HTTPException(413, 'Frame too large')
-        if length != FRAME_BYTES:
+        if length<=0 or (exact_bytes is not None and length != exact_bytes):
             raise HTTPException(400, 'Wrong frame size')
         if request.headers.get('content-type', '') != 'application/octet-stream':
             raise HTTPException(415, 'Expected application/octet-stream')
@@ -317,15 +362,21 @@ def create_app(manager=None, start_worker=True):
             try:
                 async with asyncio.timeout(10):
                     async for chunk in request.stream():
-                        if len(body) + len(chunk) > FRAME_BYTES:
+                        if len(body) + len(chunk) > limit:
                             raise HTTPException(413, 'Frame too large')
                         body.extend(chunk)
             except TimeoutError:
                 raise HTTPException(408, 'Frame upload timed out') from None
-            if len(body) != FRAME_BYTES:
+            if len(body) != length:
                 raise HTTPException(400, 'Wrong frame size')
             try:
-                await asyncio.to_thread(manager.send, key, bytes(body))
+                caps.validate_frame(mode,body)
+                if not mode_id and generation is None:
+                    await asyncio.to_thread(manager.send, key, bytes(body))
+                else:
+                    await asyncio.to_thread(manager.send, key, bytes(body), mode.id, generation)
+            except ValueError:
+                raise HTTPException(400, 'Invalid frame or changed display mode') from None
             except BusyError:
                 raise HTTPException(409, 'Display busy') from None
             except KeyError:

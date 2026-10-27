@@ -11,6 +11,7 @@ import psutil
 import websocket
 from .models import Snapshot
 from .access import validate_source
+from .truenas import API_VERSION, TrueNASError, collect_session, close_truenas_sessions
 
 LIMIT = 4 * 1024 * 1024
 
@@ -200,18 +201,15 @@ def collect(source, secret_dir):
             context.load_verify_locations(cafile=str(ca))
         if source.kind == 'truenas':
             u = urlsplit(source.url)
-            endpoint = urlunsplit(('wss' if u.scheme == 'https' else 'ws', u.netloc, '/api/current', '', ''))
-            peer = websocket.create_connection(endpoint, timeout=8, sslopt={'context':context}, redirect_limit=0)
-            try:
-                return collect_truenas(source, peer, token)
-            finally:
-                peer.close()
+            endpoint = urlunsplit(('wss' if u.scheme == 'https' else 'ws', u.netloc, '/api/' + API_VERSION, '', ''))
+            return collect_session(source, token, lambda: websocket.create_connection(
+                endpoint, timeout=8, sslopt={'context':context}, redirect_limit=0))
         headers = {}
         if token:
             headers['Authorization'] = ('PVEAPIToken=' if source.kind == 'proxmox' else 'Bearer ') + token
         with httpx.Client(timeout=8, verify=context, headers=headers, trust_env=False) as client:
             return collect_http(source, client)
-    except CollectorError as exc:
+    except (CollectorError, TrueNASError) as exc:
         return Snapshot(source_id=source.id, ok=False, error=str(exc))
     except Exception as exc:
         # Exception messages can contain URLs, credentials, server bodies or headers.

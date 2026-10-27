@@ -5,13 +5,14 @@ from pathlib import Path
 import threading
 import time
 from .alerts import AlertEngine
-from .collectors import collect
+from .collectors import collect, close_truenas_sessions
 from .models import Config, Snapshot
 from .render import render, bound_value
 from .access import validate_config
 from .assets import AssetStore
 from .outputs import prepare_frame, open_transport
 from .discovery import PlayerRegistry, inspect_output
+from .display_trial import DisplayTrial, test_pattern
 import copy
 
 
@@ -34,17 +35,70 @@ class Runtime:
         self.display = {'state':'disabled','last_sent':None,'error':'','frame_seconds':None}
         self.started = time.time()
         self.threads = []
+        self.trial = None
+        self.visible_page = None
+        self.visible_since = None
+        self.page_signature = None
 
-    def save(self, config):
+    def active_trial(self):
+        with self.lock:
+            if self.trial and self.trial.expired:
+                self.trial = None
+            return self.trial
+
+    def effective_config(self):
+        with self.lock:
+            trial = self.active_trial()
+            return (trial.config if trial else self.config).model_copy(deep=True)
+
+    def begin_trial(self, config):
+        config = config.model_copy(deep=True)
+        with self.lock:
+            if self.active_trial():
+                raise ValueError('Ein Displaytest läuft bereits')
+            if self.demo and config.hardware_enabled:
+                raise ValueError('Hardware ist im Demo-Modus deaktiviert')
+            if config.output.kind != 'browser' and not config.hardware_enabled:
+                raise ValueError('Hardwareausgabe für den Displaytest aktivieren')
+            if not self.demo:
+                validate_config(config, existing_device=self.config.device)
+            result = inspect_output(config, self.players, existing_device=self.config.device)
+            if not result['ok']:
+                raise ValueError(result['message'])
+            config.output = type(config.output).model_validate(result['output'])
+            self.trial = DisplayTrial(config)
+            return self.trial.status()
+
+    def finish_trial(self, trial_id, confirm=False):
+        with self.lock:
+            trial = self.active_trial()
+            if not trial or trial.id != trial_id:
+                raise ValueError('Displaytest ist abgelaufen oder nicht mehr aktiv')
+            if confirm and not trial.sent:
+                raise ValueError('Testbild wurde noch nicht ausgegeben')
+            self.trial = None
+            if confirm:
+                try:
+                    self.save(trial.config, _resolved_output=True)
+                except Exception:
+                    self.trial = trial
+                    raise
+            return {'ok': True, 'saved': confirm}
+
+    def save(self, config, *, _resolved_output=False):
         config=config.model_copy(deep=True)
         if not self.demo:
             validate_config(config,existing_device=self.config.device)
         if self.demo and config.hardware_enabled:
             raise ValueError('Hardware ist im Demo-Modus deaktiviert')
         with self.lock:
+            if self.active_trial():
+                raise ValueError('Displaytest zuerst bestätigen oder abbrechen')
             output_changed=(config.output!=self.config.output or config.device!=self.config.device
                             or config.hardware_enabled!=self.config.hardware_enabled)
-            if output_changed:
+            # Confirmation persists the exact output that produced the test image.
+            # Resolving auto-size again could silently save a newly resized player.
+            if output_changed and not _resolved_output:
                 result=inspect_output(config,self.players,existing_device=self.config.device)
                 if not self.demo and config.hardware_enabled and config.output.kind in ('aoostar','broker') and not result['ok']:
                     raise ValueError(result['message'])
@@ -64,11 +118,20 @@ class Runtime:
             self.snapshots = {k:v for k,v in self.snapshots.items() if k not in changed and any(s.id==k for s in config.sources)}
             self.history = {k:v for k,v in self.history.items() if k in self.snapshots}
             self.config = config.model_copy(deep=True)
+            close_truenas_sessions({s.id for s in config.sources if s.enabled and s.kind=='truenas'})
 
     def page(self, config, now):
         pages=[p.id for p in config.pages if p.enabled]
         if config.paused and config.selected_page in pages:
             return config.selected_page
+        if config.hardware_enabled and config.output.kind != 'browser' and not self.demo:
+            with self.lock:
+                signature = (tuple(pages), config.rotation, config.device, config.output.model_dump_json())
+                if signature != self.page_signature:
+                    self.page_signature, self.visible_page, self.visible_since = signature, pages[0], None
+                if self.visible_since is not None and now-self.visible_since >= config.rotation:
+                    return pages[(pages.index(self.visible_page)+1)%len(pages)]
+                return self.visible_page
         return pages[int((now-self.started)//config.rotation)%len(pages)]
 
     def state(self):
@@ -98,10 +161,16 @@ class Runtime:
             display=dict(self.display)
         if config.output.kind == 'browser':
             display.update(state='player',error='')
-        return {'demo':self.demo,'page':self.page(config,now),'sources':sources,'alerts':alerts,'display':display,'uptime':now-self.started,'now':now,'version':'0.3.0'}
+        trial = self.active_trial()
+        return {'demo':self.demo,'page':self.page(config,now),'sources':sources,'alerts':alerts,'display':display,'trial':trial.status() if trial else None,'uptime':now-self.started,'now':now,'version':'0.4.0'}
 
-    def image(self, page=None, draft=None):
+    def image(self, page=None, draft=None, output_config=None):
         config,snapshots,alerts,now=self.state()
+        trial = self.active_trial()
+        if draft is None and trial and (output_config is None or output_config == trial.config):
+            return test_pattern(trial.config.output)
+        if output_config is not None:
+            config = output_config
         if draft is not None:
             draft = draft.model_copy(update={'enabled':True})
             config = Config.model_validate(config.model_copy(update={'pages':[draft], 'selected_page':draft.id}).model_dump())
@@ -170,10 +239,10 @@ class Runtime:
     def output(self):
         transport=None
         transport_kind=None
+        transport_output=None
         previous=None
         while not self.stop.is_set():
-            with self.lock:
-                config=self.config.model_copy(deep=True)
+            config=self.effective_config()
             if not config.hardware_enabled or self.demo or config.output.kind not in ('aoostar','broker'):
                 if transport:
                     transport.close()
@@ -184,13 +253,20 @@ class Runtime:
                 self.stop.wait(0.5)
                 continue
             try:
-                if transport is None or transport.device!=config.device or transport_kind!=config.output.kind:
+                if (transport is None or transport.device!=config.device or transport_kind!=config.output.kind
+                        or transport_output!=config.output):
                     if transport:
                         transport.close()
                     transport=open_transport(config.output, config.device)
                     transport_kind=config.output.kind
+                    transport_output=config.output.model_copy(deep=True)
                     previous=None
-                image=self.image()
+                with self.lock:
+                    page_id=self.page(config,time.time())
+                    trial=self.active_trial()
+                    if trial and trial.config != config:
+                        trial=None
+                    image=self.image(page_id,output_config=config)
                 frame=image.tobytes()
                 if frame!=previous or (hasattr(transport,'needs_refresh') and transport.needs_refresh()):
                     with self.lock:
@@ -200,6 +276,12 @@ class Runtime:
                     previous=frame
                     with self.lock:
                         self.display.update(state='connected',last_sent=time.time(),error='',frame_seconds=round(time.monotonic()-start,2))
+                with self.lock:
+                    if trial and self.active_trial() is trial:
+                        trial.sent = True
+                    if not trial and self.effective_config() == config:
+                        if self.visible_page != page_id or self.visible_since is None:
+                            self.visible_page, self.visible_since = page_id, time.time()
             except Exception as exc:
                 if transport:
                     transport.close()
@@ -220,5 +302,7 @@ class Runtime:
 
     def close(self):
         self.stop.set()
+        close_truenas_sessions()
         for t in self.threads:
             t.join(timeout=12)
+        close_truenas_sessions()

@@ -154,6 +154,9 @@ class Rule(Model):
 
 class Output(Model):
     kind: Literal['aoostar','browser','broker'] = 'aoostar'
+    adapter_id: str = Field(default='', pattern=r'^[a-z0-9_-]{0,64}$')
+    mode_id: str = Field(default='', max_length=64)
+    pixel_format: str = Field(default='', max_length=32)
     width: int = Field(default=960, ge=64, le=3840)
     height: int = Field(default=376, ge=64, le=3840)
     rotation: Literal[0,90,180,270] = 0
@@ -166,8 +169,17 @@ class Output(Model):
     def capabilities(self):
         if self.width*self.height>8_294_400:
             raise ValueError('Output exceeds 8.3 million pixels')
-        if self.kind in ('aoostar','broker') and (self.width,self.height)!=(960,376):
-            raise ValueError('AOOSTAR serial output requires 960 × 376')
+        if not self.adapter_id:
+            self.adapter_id = 'browser' if self.kind=='browser' else 'aoostar'
+        if self.kind!='broker':
+            from .adapters import ADAPTERS
+            if self.adapter_id != self.kind:
+                if self.adapter_id not in ('aoostar','browser'):
+                    raise ValueError('Adapter does not match output transport')
+                # Older API clients change only kind on the returned config.
+                self.adapter_id, self.mode_id, self.pixel_format = self.kind, '', ''
+            caps = ADAPTERS.get(self.adapter_id).get_capabilities(width=self.width,height=self.height)
+            caps.select(self.width,self.height,self.mode_id,self.pixel_format,self.rotation)
         return self
 
 

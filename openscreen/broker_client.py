@@ -1,9 +1,10 @@
-"""Narrow Unix-socket client: inventory and complete RGB565 frames only."""
+"""Bounded Unix-socket client for frames supported by trusted bundled adapters."""
 import json
 import os
 import re
+from urllib.parse import urlencode
 import httpx
-from .protocol import encode_rgb565, SIZE
+from .adapters import ADAPTERS, Capabilities
 
 
 IDENTIFIER=re.compile(r'^[a-f0-9]{32}$')
@@ -38,12 +39,26 @@ def inventory():
         raise ValueError('Ungültiges Broker-Inventar')
     devices=[]
     for item in data.get('devices',[])[:16]:
+        if not isinstance(item,dict):
+            continue
+        try:
+            # Legacy v1 inventory is the explicitly known AOOSTAR profile.
+            caps = Capabilities.from_dict(item['capabilities']) if 'capabilities' in item else ADAPTERS.get('aoostar').get_capabilities(item.get('id',''))
+            adapter = ADAPTERS.get(caps.adapter_id)
+            if not adapter.broker_serial:
+                continue
+            trusted = adapter.get_capabilities(item.get('id',''))
+            if caps.version!=trusted.version or caps.modes!=trusted.modes or caps.max_frame_bytes!=trusted.max_frame_bytes or caps.device_id!=item.get('id') or caps.rotations!=trusted.rotations:
+                continue
+        except (ValueError,TypeError,AttributeError):
+            continue
         if (isinstance(item,dict) and IDENTIFIER.fullmatch(str(item.get('id','')))
             and IDENTIFIER.fullmatch(str(item.get('generation',''))) and item.get('verified') is True
-            and (item.get('width'),item.get('height'))==SIZE):
+            and any((item.get('width'),item.get('height'))==(m.width,m.height) for m in caps.modes)):
             devices.append({'id':item['id'],'device':'broker:'+item['id'],'name':str(item.get('name','Display'))[:100],
-                            'width':SIZE[0],'height':SIZE[1],'kind':'broker','verified':True,'accessible':True,
-                            'state':'ready','generation':item['generation'],'size_source':'adapter-profile'})
+                            'width':item['width'],'height':item['height'],'kind':'broker','verified':True,'accessible':True,
+                            'state':'ready','generation':item['generation'],'size_source':caps.size_source,
+                            'capabilities':caps.to_dict()})
     candidates=[]
     for item in data.get('candidates',[])[:128]:
         if isinstance(item,dict):
@@ -64,8 +79,9 @@ def selected(device):
 
 
 class BrokerTransport:
-    def __init__(self,device):
+    def __init__(self,device,output=None):
         self.device=device
+        self.output=output
         self.generation=None
         self.identity=None
 
@@ -74,10 +90,16 @@ class BrokerTransport:
         return (item['id'],item['generation'])!=(self.identity,self.generation)
 
     def send(self,image):
-        if image.size!=SIZE:
-            raise ValueError('Broker frame requires 960 × 376')
         item=selected(self.device)
-        response=request('POST','/v1/devices/'+item['id']+'/frame',encode_rgb565(image))
+        caps=Capabilities.from_dict(item['capabilities'])
+        if self.output is not None:
+            from .outputs import validate_output
+            mode=validate_output(self.output,caps)
+        else:
+            mode=caps.select(*image.size)
+        frame=ADAPTERS.get(caps.adapter_id).encode(image,caps,mode)
+        query=urlencode({'mode':mode.id,'generation':item['generation']})
+        response=request('POST','/v1/devices/'+item['id']+'/frame?'+query,frame)
         if not isinstance(response,dict) or response.get('ok') is not True:
             raise OSError('Broker did not acknowledge frame delivery')
         self.identity,self.generation=item['id'],item['generation']

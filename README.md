@@ -143,14 +143,19 @@ Existing configurations with unapproved sources fail closed at startup.
 | Source | Supported data |
 |---|---|
 | Local system | CPU, memory, available CPU temperature sensors, network counters, uptime |
-| TrueNAS 25.10 | Apps, pool state, and pool capacity through JSON-RPC |
+| TrueNAS 25.10 | Host CPU, RAM, temperature, network/disk rates via realtime events; apps, pools and system containers according to API capabilities and read permissions |
 | Docker | Container state; health/restarts for up to 50 containers and CPU/memory for up to 10 |
 | Proxmox VE | Cluster nodes, QEMU VMs, and LXC containers with state and resource usage |
 | HTTP JSON | Numeric metrics selected through simple dotted paths |
 
 Local metrics describe the container's runtime environment, not necessarily the
-NAS host. The TrueNAS adapter does not yet provide system-container, SMART, or
-remote CPU/network metrics. Unavailable data is shown as unknown.
+NAS host. TrueNAS host data uses a persistent versioned JSON-RPC WebSocket;
+missing permissions, unsupported methods and stale realtime data leave affected
+values unknown while other features continue. System containers are separate
+from apps. SMART monitoring is not implemented. In the source options, set
+`network_interface=eth0` to select one interface; without an explicit selection,
+multiple interfaces remain unknown rather than summing bridges and physical ports.
+The source view shows data scope and partial-feature availability.
 
 ### API credentials
 
@@ -269,9 +274,22 @@ a heartbeat, are kept only in memory, and do not change saved settings on their 
 An offline player leaves the manually specified/last saved size unchanged.
 The selection supplies a size reference; all players still mirror the same output.
 
-Browser dimensions are estimates based on screen size and pixel ratio, not EDID
-measurements. Browser zoom, OS scaling, and multi-monitor behavior can affect them.
+Browser dimensions describe the actual player rendering container in physical
+pixels (`player-viewport` provenance), using ResizeObserver device-pixel boxes
+or CSS size multiplied by DPR. Resize, fullscreen, orientation and DPR changes
+are debounced; unchanged sizes send a heartbeat every 30 seconds. These are render
+area measurements, not EDID or native panel-resolution confirmation.
 Reports outside the application's supported pixel limits are not registered.
+
+### Validate the displayed image (0.4.0)
+
+The settings test image temporarily replaces runtime output for up to 60 seconds.
+Inspect its border, corner marks, colors, circle and text sizes on the actual
+display, then confirm or cancel. Timeout/cancel restores the previous output;
+confirmation records the visual check without treating a protocol ACK as proof
+of correct physical dimensions. Adapter capabilities validate broker modes;
+unknown USB/HID protocols remain unsupported. This release does not deploy or
+change a NAS automatically.
 
 In direct-mapping mode, Docker only exposes devices explicitly passed into the container. Discovery cannot
 see arbitrary host USB devices or discover disconnected hardware; no privileged

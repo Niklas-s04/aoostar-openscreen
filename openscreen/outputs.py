@@ -4,12 +4,28 @@ Serial protocols belong in device adapters, never in the canvas renderer.
 Browser clients pull the current PNG; they do not require host display access.
 """
 from PIL import Image, ImageOps
-from .protocol import DisplayTransport
+from .adapters import ADAPTERS
+
+
+def get_capabilities(output, device=''):
+    if output.kind == 'broker':
+        from .broker_client import selected
+        from .adapters import Capabilities
+        return Capabilities.from_dict(selected(device or 'auto')['capabilities'])
+    return ADAPTERS.get(output.adapter_id).get_capabilities(
+        device, width=output.width, height=output.height)
+
+
+def validate_output(output, capabilities):
+    if output.adapter_id != capabilities.adapter_id:
+        raise ValueError('Selected device uses another adapter')
+    return capabilities.select(output.width,output.height,output.mode_id,
+                               output.pixel_format,output.rotation)
 
 
 OUTPUTS = [
     {'id':'broker','name':'Automatic display broker','transport':'unix-socket',
-     'width':960,'height':376,'pixel_format':'RGB565 LE','push':True},
+     'device_capabilities':True,'push':True},
     {'id':'aoostar','name':'AOOSTAR USB / Serial','transport':'serial',
      'width':960,'height':376,'pixel_format':'RGB565 LE','push':True},
     {'id':'browser','name':'Browser / Network player','transport':'http-pull',
@@ -38,7 +54,8 @@ def prepare_frame(image, output):
 def open_transport(output, device):
     if output.kind == 'broker':
         from .broker_client import BrokerTransport
-        return BrokerTransport(device)
+        return BrokerTransport(device, output)
     if output.kind == 'aoostar':
-        return DisplayTransport(device)
+        validate_output(output,get_capabilities(output,device))
+        return ADAPTERS.get(output.adapter_id).open(device)
     raise ValueError('This output is served through the network player')

@@ -42,7 +42,7 @@ def test_browser_registry_expiry_and_auto_size(monkeypatch):
     registry.report(PlayerReport(id='a'*32,width=1920,height=1080))
     config=Config(output=Output(kind='browser',player_id='a'*32))
     result=discovery.inspect_output(config,registry)
-    assert result['output']['width']==1920 and result['size_source']=='browser-estimate'
+    assert result['output']['width']==1920 and result['size_source']=='player-viewport'
     config.output.auto_size=False
     assert discovery.inspect_output(config,registry)['output']['width']==960
     monkeypatch.setattr(discovery.time,'monotonic',lambda:101)

@@ -157,7 +157,30 @@ def create_app(data_dir=None, secret_dir=None, demo=None, start_workers=True):
 
     @app.get('/api/output.png')
     def output_frame():
-        return Response(png(runtime.image()),media_type='image/png')
+        with runtime.lock:
+            trial = runtime.active_trial()
+            data = png(runtime.image())
+            if trial and runtime.active_trial() is trial and trial.config.output.kind == 'browser':
+                trial.sent = True
+        return Response(data,media_type='image/png')
+
+    @app.post('/api/displays/trial')
+    def display_trial(config:Config):
+        try:
+            return runtime.begin_trial(config)
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+    @app.post('/api/displays/trial/{trial_id}/{action}')
+    def finish_display_trial(trial_id:str, action:str):
+        if action not in ('confirm','cancel'):
+            raise HTTPException(404, 'Unbekannte Testaktion')
+        try:
+            return runtime.finish_trial(trial_id, confirm=action=='confirm')
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        except OSError:
+            raise HTTPException(500, 'Konfiguration konnte nicht gespeichert werden') from None
 
     @app.post('/api/editor/preview')
     def editor_preview(page:Page):

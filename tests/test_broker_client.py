@@ -1,4 +1,5 @@
 import pytest
+from urllib.parse import urlsplit, parse_qs
 from PIL import Image
 from openscreen import broker_client
 from openscreen.models import Config, Output
@@ -31,7 +32,9 @@ def test_only_complete_frames_and_reconnect_resends(monkeypatch):
     with pytest.raises(ValueError):
         transport.send(Image.new('RGB',(1,1)))
     transport.send(Image.new('RGB',(960,376),'red'))
-    assert len(sent[0][1])==721920 and sent[0][0]=='/v1/devices/'+'a'*32+'/frame'
+    target=urlsplit(sent[0][0])
+    assert len(sent[0][1])==721920 and target.path=='/v1/devices/'+'a'*32+'/frame'
+    assert parse_qs(target.query)=={'mode':['960x376-rgb565'],'generation':['b'*32]}
     assert sent[0][1][:2]==b'\x00\xf8'
     assert not transport.needs_refresh()
     generation[0]='c'*32
