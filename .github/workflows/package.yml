@@ -1,8 +1,6 @@
-name: Publish container package
+name: Publish and verify GHCR package manually
 
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
     inputs:
       release_tag:

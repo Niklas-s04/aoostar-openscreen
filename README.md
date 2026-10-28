@@ -49,11 +49,12 @@ docker tag ghcr.io/niklas-s04/aoostar-openscreen:1.0.1 aoostar-openscreen:local
 docker compose up -d --no-build
 ```
 
-Release tags trigger `.github/workflows/package.yml`. Maintainers can also use
-its manual dispatch to publish an existing release tag. The workflow builds the
-tagged source, checks non-root imports and application startup, and publishes
-using the repository's temporary `GITHUB_TOKEN`; no registry password is stored
-in this repository.
+Release tags trigger `.github/workflows/docker-publish.yml` for Docker Hub and
+GHCR. The separate `.github/workflows/package.yml` is a manual GHCR-only option
+for an existing release tag, with non-root import and application startup checks.
+Do not run both publishers for the same release simultaneously. GHCR publication
+uses the repository's temporary `GITHUB_TOKEN`; Docker Hub uses the repository's
+`DOCKERHUB_TOKEN` secret, never a password committed to this repository.
 
 ### Build from source
 
