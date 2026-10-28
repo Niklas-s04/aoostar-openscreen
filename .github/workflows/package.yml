@@ -1,0 +1,84 @@
+name: Publish container package
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to publish (for example v1.0.1)
+        required: true
+        default: v1.0.1
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: container-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+    steps:
+      - name: Validate release tag
+        run: '[[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]'
+
+      - name: Check out release source
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: refs/tags/${{ inputs.release_tag || github.ref_name }}
+          persist-credentials: false
+
+      - name: Validate version and set image name
+        run: |
+          VERSION=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          test "v$VERSION" = "$RELEASE_TAG"
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+          echo "REVISION=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Build Linux AMD64 image
+        run: |
+          docker build --pull --platform linux/amd64 \
+            --label "org.opencontainers.image.revision=$REVISION" \
+            --label "org.opencontainers.image.version=$VERSION" \
+            -t "$IMAGE:$VERSION" .
+
+      - name: Verify non-root imports and application startup
+        run: |
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --security-opt no-new-privileges:true "$IMAGE:$VERSION" \
+            python -c 'import os, openscreen.app, openscreen.broker; assert os.getuid() == 10001'
+          docker run -d --name openscreen-check --network none --read-only \
+            --cap-drop ALL --security-opt no-new-privileges:true \
+            --tmpfs /data:uid=10001,gid=10001,mode=0700 \
+            --tmpfs /tmp:size=16m,mode=1777 "$IMAGE:$VERSION"
+          trap 'docker logs openscreen-check; docker rm -f openscreen-check' EXIT
+          for attempt in $(seq 1 30); do
+            if docker exec openscreen-check python -c 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8080/healthz", timeout=2)'; then
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+
+      - name: Authenticate to GitHub Container Registry
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$REGISTRY_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+
+      - name: Publish release and latest tags
+        run: |
+          docker push "$IMAGE:$VERSION"
+          docker tag "$IMAGE:$VERSION" "$IMAGE:latest"
+          docker push "$IMAGE:latest"
+          echo "Published \`$IMAGE:$VERSION\` (linux/amd64), source \`$REVISION\`." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Log out of registry
+        if: always()
+        run: docker logout ghcr.io
