@@ -4,7 +4,7 @@ This guide targets TrueNAS SCALE 25.10 with an Apps pool configured. The NAS mus
 have physical access to the display, either directly or through USB passthrough
 when TrueNAS runs in a virtual machine.
 
-The application is experimental. Physical frame output still needs validation.
+This guide covers release 1.0.0. Physical frame output still needs validation.
 
 The optional display broker handles USB serial discovery and reconnects within
 the Custom App. No host Python packages, `apt` commands, systemd units, custom
@@ -160,7 +160,7 @@ Set `network_interface=eth0` in the source field/options area to select exactly
 one interface; absent a selection, multiple interfaces are not summed. SMART is
 not implemented. A Docker socket mount is not required for this setup.
 
-In 0.4.0, browser size references measure the player rendering area, not native
+Browser size references measure the player rendering area, not native
 panel resolution. Broker modes are checked against adapter capabilities; unknown
 protocols remain unsupported. Use the temporary settings test image to inspect
 the actual screen: confirm or cancel within 60 seconds; cancellation or timeout

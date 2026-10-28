@@ -5,6 +5,9 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
 FROM python:3.13-slim-bookworm
+LABEL org.opencontainers.image.title="AOOSTAR OpenScreen" \
+    org.opencontainers.image.version="1.0.0" \
+    org.opencontainers.image.source="https://github.com/Niklas-s04/aoostar-openscreen"
 RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core fonts-liberation2 ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -g 10001 openscreen && useradd -u 10001 -g openscreen -M openscreen \

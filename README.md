@@ -7,7 +7,7 @@ provides configuration, a visual editor, and a live preview.
 
 This is an independent project, not an official AOOSTAR application.
 
-**Status: experimental.** Container operation and automated tests have been
+**Release: 1.0.0.** Container operation and automated tests have been
 verified. Physical display output and live TrueNAS/Proxmox integration still need
 validation. The current web interface is in German.
 
@@ -26,6 +26,18 @@ validation. The current web interface is in German.
 - Passwordless access restricted to explicitly allowed local networks and hosts.
 
 ## Quick start
+
+To build the versioned 1.0.0 image from this release:
+
+```sh
+git clone --branch v1.0.0 --depth 1 https://github.com/Niklas-s04/aoostar-openscreen.git
+cd aoostar-openscreen
+docker build -t aoostar-openscreen:1.0.0 -t aoostar-openscreen:local .
+```
+
+The `local` tag is used by the supplied Compose and TrueNAS YAML files. The image
+is built locally; this release does not imply a published container registry image
+or certification of additional display models.
 
 Install Docker with Docker Compose, then:
 
@@ -281,7 +293,7 @@ are debounced; unchanged sizes send a heartbeat every 30 seconds. These are rend
 area measurements, not EDID or native panel-resolution confirmation.
 Reports outside the application's supported pixel limits are not registered.
 
-### Validate the displayed image (0.4.0)
+### Validate the displayed image
 
 The settings test image temporarily replaces runtime output for up to 60 seconds.
 Inspect its border, corner marks, colors, circle and text sizes on the actual
