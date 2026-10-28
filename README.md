@@ -27,6 +27,36 @@ validation. The current web interface is in German.
 
 ## Quick start
 
+### Prebuilt container package
+
+Release images are published to
+[GitHub Container Registry](https://github.com/users/Niklas-s04/packages/container/package/aoostar-openscreen)
+for **linux/amd64**. The versioned tag is recommended for deployments:
+
+```sh
+docker pull ghcr.io/niklas-s04/aoostar-openscreen:1.0.1
+```
+
+The `latest` tag follows the most recently published release. An initial package
+must be made **Public** in its GitHub package settings before anonymous pulls
+work. A public repository alone does not make its container package public.
+
+For the supplied local Compose files, tag the downloaded image locally and skip
+building:
+
+```sh
+docker tag ghcr.io/niklas-s04/aoostar-openscreen:1.0.1 aoostar-openscreen:local
+docker compose up -d --no-build
+```
+
+Release tags trigger `.github/workflows/package.yml`. Maintainers can also use
+its manual dispatch to publish an existing release tag. The workflow builds the
+tagged source, checks non-root imports and application startup, and publishes
+using the repository's temporary `GITHUB_TOKEN`; no registry password is stored
+in this repository.
+
+### Build from source
+
 To build the versioned 1.0.1 image from this release:
 
 ```sh
@@ -35,9 +65,9 @@ cd aoostar-openscreen
 docker build -t aoostar-openscreen:1.0.1 -t aoostar-openscreen:local .
 ```
 
-The `local` tag is used by the supplied Compose and TrueNAS YAML files. The image
-is built locally; this release does not imply a published container registry image
-or certification of additional display models.
+The `local` tag is used by the supplied Compose and TrueNAS YAML files. Building
+locally remains available as an alternative to the container package. Neither
+installation method implies certification of additional display models.
 
 Install Docker with Docker Compose, then:
 

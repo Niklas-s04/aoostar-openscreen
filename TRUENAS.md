@@ -19,6 +19,22 @@ software inside the app image and use supported Apps management. See the
 
 ## 1. Build and transfer the image
 
+Alternatively, use the prebuilt **linux/amd64** release package. After its GitHub
+package visibility is set to **Public**, run in the NAS administration shell:
+
+```sh
+sudo docker pull ghcr.io/niklas-s04/aoostar-openscreen:1.0.1
+```
+
+In the existing app YAML, replace `image: aoostar-openscreen:local` with
+`image: ghcr.io/niklas-s04/aoostar-openscreen:1.0.1` and replace
+`pull_policy: never` with `pull_policy: always`. With the broker configuration,
+make both replacements in **both services**. Keep the data mount and security
+settings unchanged, then save the app in TrueNAS. A versioned tag makes updates
+explicit; do not assume `latest` is the same release indefinitely.
+
+The remaining steps in this section are only needed when building locally.
+
 Build on a machine running Docker:
 
 ```sh
