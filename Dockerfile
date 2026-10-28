@@ -6,7 +6,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 
 FROM python:3.13-slim-bookworm
 LABEL org.opencontainers.image.title="AOOSTAR OpenScreen" \
-    org.opencontainers.image.version="1.0.0" \
+    org.opencontainers.image.version="1.0.1" \
     org.opencontainers.image.source="https://github.com/Niklas-s04/aoostar-openscreen"
 RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-core fonts-liberation2 ca-certificates \
     && rm -rf /var/lib/apt/lists/* \
@@ -16,6 +16,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends fonts-dejavu-co
 WORKDIR /app
 COPY --from=build /app/.venv /app/.venv
 COPY openscreen /app/openscreen
+RUN find /app/openscreen -type d -exec chmod 0755 {} + \
+    && find /app/openscreen -type f -exec chmod 0644 {} +
 ENV PATH="/app/.venv/bin:$PATH" PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 \
     OPENSCREEN_DATA=/data OPENSCREEN_SECRETS=/run/secrets
 USER 10001:10001

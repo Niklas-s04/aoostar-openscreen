@@ -7,7 +7,7 @@ provides configuration, a visual editor, and a live preview.
 
 This is an independent project, not an official AOOSTAR application.
 
-**Release: 1.0.0.** Container operation and automated tests have been
+**Release: 1.0.1.** Container operation and automated tests have been
 verified. Physical display output and live TrueNAS/Proxmox integration still need
 validation. The current web interface is in German.
 
@@ -27,12 +27,12 @@ validation. The current web interface is in German.
 
 ## Quick start
 
-To build the versioned 1.0.0 image from this release:
+To build the versioned 1.0.1 image from this release:
 
 ```sh
-git clone --branch v1.0.0 --depth 1 https://github.com/Niklas-s04/aoostar-openscreen.git
+git clone --branch v1.0.1 --depth 1 https://github.com/Niklas-s04/aoostar-openscreen.git
 cd aoostar-openscreen
-docker build -t aoostar-openscreen:1.0.0 -t aoostar-openscreen:local .
+docker build -t aoostar-openscreen:1.0.1 -t aoostar-openscreen:local .
 ```
 
 The `local` tag is used by the supplied Compose and TrueNAS YAML files. The image

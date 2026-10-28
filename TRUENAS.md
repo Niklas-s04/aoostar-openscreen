@@ -4,7 +4,12 @@ This guide targets TrueNAS SCALE 25.10 with an Apps pool configured. The NAS mus
 have physical access to the display, either directly or through USB passthrough
 when TrueNAS runs in a virtual machine.
 
-This guide covers release 1.0.0. Physical frame output still needs validation.
+This guide covers release 1.0.1. Physical frame output still needs validation.
+
+Version 1.0.1 normalizes application code permissions inside the image. If an
+older image fails with `PermissionError: /app/openscreen/__init__.py`, rebuild
+from v1.0.1 and update both service image tags. Do not change NAS dataset ACLs
+or run the containers as root to work around this image-build issue.
 
 The optional display broker handles USB serial discovery and reconnects within
 the Custom App. No host Python packages, `apt` commands, systemd units, custom
