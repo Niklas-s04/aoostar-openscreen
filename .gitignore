@@ -8,6 +8,7 @@ analysis/
 design/
 # Local working notes and generated validation output; keep product docs visible.
 /.local/
+/.release-tools/
 /catalog/REPORT.md
 /catalog/RELEASE-REPORT.md
 /catalog/COMPLIANCE.md

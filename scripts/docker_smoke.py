@@ -25,7 +25,14 @@ def main():
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     project = 'openscreen-check-' + uuid.uuid4().hex[:8]
-    env = dict(os.environ, DOCKER_SOCKET_GID='0', OPENSCREEN_ALLOWED_SOURCE_URLS='http://docker-proxy:2375')
+    socket_gid = os.getenv('DOCKER_SOCKET_GID')
+    if socket_gid is None:
+        # Linux hosts expose the real group; Docker Desktop's VM uses group 0.
+        socket_path = Path('/var/run/docker.sock')
+        socket_gid = str(socket_path.stat().st_gid) if socket_path.exists() else '0'
+    if not socket_gid.isdecimal():
+        raise ValueError('DOCKER_SOCKET_GID must be numeric')
+    env = dict(os.environ, DOCKER_SOCKET_GID=socket_gid, OPENSCREEN_ALLOWED_SOURCE_URLS='http://docker-proxy:2375')
     compose = ['docker', 'compose', '-p', project, '-f', 'compose.yaml', '-f', 'compose.docker.yaml']
     if args.broker:
         env['OPENSCREEN_DEVICE_GID']=os.getenv('OPENSCREEN_DEVICE_GID','0')
