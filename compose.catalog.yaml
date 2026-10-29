@@ -1,0 +1,22 @@
+services:
+  openscreen:
+    image: ghcr.io/niklas-s04/aoostar-openscreen-catalog:1.0.2
+    build:
+      context: .
+      dockerfile: Dockerfile.catalog
+    user: '10001:10001'
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    ports: ['127.0.0.1:32176:8080']
+    environment:
+      OPENSCREEN_ALLOWED_NETWORKS: '${OPENSCREEN_ALLOWED_NETWORKS:-127.0.0.0/8,::1/128}'
+      OPENSCREEN_ALLOWED_HOSTS: '${OPENSCREEN_ALLOWED_HOSTS:-localhost,127.0.0.1,::1}'
+    volumes: ['catalog_data:/data']
+    tmpfs: ['/tmp:size=67108864,mode=1777,noexec,nosuid,nodev']
+    mem_limit: 512m
+    cpus: 2
+    pids_limit: 128
+    restart: unless-stopped
+volumes:
+  catalog_data:

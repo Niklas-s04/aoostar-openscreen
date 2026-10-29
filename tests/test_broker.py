@@ -161,13 +161,16 @@ def test_checked_fd_and_handshake(tmp_path, monkeypatch, ack):
     item = Candidate(KEY, 'ttyACM0', Path('/sys/a'), Path('/sys/b'), os.makedev(166, 0), True)
     value.inspect = Mock(return_value=item)
     info = SimpleNamespace(st_mode=stat.S_IFCHR | 0o660, st_rdev=item.rdev, st_dev=1, st_ino=42)
-    monkeypatch.setattr(Path, 'lstat', lambda self: info)
+    real_lstat = Path.lstat
+    monkeypatch.setattr(Path, 'lstat', lambda self: info if self == tmp_path / 'ttyACM0' else real_lstat(self))
     opener = Mock(return_value=90)
     closer = Mock()
     monkeypatch.setattr(os, 'open', opener)
-    monkeypatch.setattr(os, 'fstat', lambda fd: info)
+    real_fstat = os.fstat
+    monkeypatch.setattr(os, 'fstat', lambda fd: info if fd == 90 else real_fstat(fd))
     monkeypatch.setattr(os, 'close', closer)
     port = Mock()
+    port.fileno.return_value = 90
     port.read.return_value = ack
     port.write.side_effect = lambda data: len(data)
     factory = Mock(return_value=port)

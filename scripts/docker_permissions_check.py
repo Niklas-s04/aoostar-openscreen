@@ -13,7 +13,7 @@ def main():
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     tag = 'openscreen-permissions-check:' + uuid.uuid4().hex[:12]
-    paths = [root / name for name in ('Dockerfile', 'pyproject.toml', 'uv.lock')]
+    paths = [root / name for name in ('Dockerfile', 'pyproject.toml', 'uv.lock', 'LICENSE')]
     paths += [root / 'openscreen'] + sorted((root / 'openscreen').rglob('*'))
     try:
         with tempfile.TemporaryFile() as context:

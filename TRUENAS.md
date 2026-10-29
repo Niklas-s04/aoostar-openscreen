@@ -1,10 +1,15 @@
 # TrueNAS installation
 
+This is the **full Custom App** guide, not an official catalog entry. The separate
+[Catalog browser distribution](catalog/README.md) does not support NAS telemetry
+or the built-in USB display. It is still awaiting publication prerequisites and
+maintainer review; do not submit the configurations below as catalog templates.
+
 This guide targets TrueNAS SCALE 25.10 with an Apps pool configured. The NAS must
 have physical access to the display, either directly or through USB passthrough
 when TrueNAS runs in a virtual machine.
 
-This guide covers release 1.0.1. Physical frame output still needs validation.
+This guide covers version 1.0.2. Physical frame output still needs validation.
 
 Version 1.0.1 normalizes application code permissions inside the image. If an
 older image fails with `PermissionError: /app/openscreen/__init__.py`, rebuild
@@ -23,11 +28,11 @@ Alternatively, use the prebuilt **linux/amd64** release package. After its GitHu
 package visibility is set to **Public**, run in the NAS administration shell:
 
 ```sh
-sudo docker pull ghcr.io/niklas-s04/aoostar-openscreen:1.0.1
+sudo docker pull ghcr.io/niklas-s04/aoostar-openscreen:1.0.2
 ```
 
 In the existing app YAML, replace `image: aoostar-openscreen:local` with
-`image: ghcr.io/niklas-s04/aoostar-openscreen:1.0.1` and replace
+`image: ghcr.io/niklas-s04/aoostar-openscreen:1.0.2` and replace
 `pull_policy: never` with `pull_policy: always`. With the broker configuration,
 make both replacements in **both services**. Keep the data mount and security
 settings unchanged, then save the app in TrueNAS. A versioned tag makes updates

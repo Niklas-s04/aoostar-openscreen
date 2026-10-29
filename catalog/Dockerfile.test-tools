@@ -1,0 +1,12 @@
+# Local Linux test runner, NEVER part of the application deployment or image.
+FROM ghcr.io/truenas/apps_validation:slim@sha256:ba4827ae6b636a870a52f709e2f7af718eaf81c4d236cb33768ebb3444ee8083 AS cli
+FROM python:3.13-slim-bookworm@sha256:281d39ff02e3b389401586134ff9e6572954687822a58055ec07a60ded4e0b7f
+COPY --from=ghcr.io/astral-sh/uv:0.13.3@sha256:bee0a2a458fd956c5df7b8b4c5fed2257b0af34866e3da7b51db0be3acb375d1 /uv /usr/local/bin/uv
+COPY pyproject.toml uv.lock /opt/test-env/
+RUN uv sync --project /opt/test-env --frozen --no-install-project
+# Compose config tests need the CLI, not a Docker socket or privileged runner.
+COPY --from=cli /usr/bin/docker /usr/bin/docker
+COPY --from=cli /usr/libexec/docker/cli-plugins/docker-compose /usr/libexec/docker/cli-plugins/docker-compose
+RUN docker compose version
+WORKDIR /work
+ENV PATH="/opt/test-env/.venv/bin:$PATH" PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=/work

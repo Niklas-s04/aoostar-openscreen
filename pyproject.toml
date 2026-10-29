@@ -1,12 +1,12 @@
 [project]
 name = "aoostar-openscreen"
-version = "1.0.1"
+version = "1.0.2"
 description = "Independent AOOSTAR WTR Max display dashboard"
 requires-python = ">=3.13,<3.14"
 dependencies = [
     "fastapi>=0.115,<1",
     "uvicorn>=0.34,<1",
-    "pillow>=11,<13",
+    "pillow>=13,<14",
     "pyserial==3.5",
     "psutil>=7,<8",
     "httpx>=0.28,<1",
@@ -16,6 +16,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "pyyaml>=6,<7",
     "playwright>=1.64.1",
     "pytest>=8,<10",
 ]

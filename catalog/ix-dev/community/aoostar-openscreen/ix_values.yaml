@@ -1,0 +1,12 @@
+{
+  "images": {
+    "image": {
+      "repository": "ghcr.io/niklas-s04/aoostar-openscreen-catalog",
+      "tag": "1.0.2"
+    }
+  },
+  "consts": {
+    "container_name": "openscreen",
+    "notes_body": "Browser-only distribution. No built-in USB display or NAS telemetry. All allowed peers are administrators. Storage must be writable by UID/GID 10001; this app does not change ownership or ACLs."
+  }
+}

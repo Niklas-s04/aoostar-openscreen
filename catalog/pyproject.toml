@@ -1,0 +1,11 @@
+[project]
+name = "aoostar-openscreen-catalog"
+version = "1.0.2"
+description = "Browser-only OpenScreen canvas; no host integration"
+requires-python = ">=3.13,<3.14"
+dependencies = [
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.34,<1",
+    "pillow>=13,<14",
+    "tzdata>=2026.5",
+]

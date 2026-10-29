@@ -1,0 +1,303 @@
+{
+  "groups": [
+    {
+      "name": "Application",
+      "description": "Application configuration"
+    },
+    {
+      "name": "Network",
+      "description": "Network configuration"
+    },
+    {
+      "name": "Storage",
+      "description": "Storage configuration"
+    },
+    {
+      "name": "Resources",
+      "description": "Resources configuration"
+    }
+  ],
+  "questions": [
+    {
+      "variable": "openscreen",
+      "label": "Access restrictions",
+      "schema": {
+        "type": "dict",
+        "attrs": [
+          {
+            "variable": "allowed_hosts",
+            "label": "Allowed Hosts (comma separated; exact names/IPs)",
+            "schema": {
+              "type": "string",
+              "required": true,
+              "default": "localhost,127.0.0.1,::1"
+            }
+          },
+          {
+            "variable": "allowed_networks",
+            "label": "Trusted administrator networks (private CIDRs, comma separated)",
+            "schema": {
+              "type": "string",
+              "required": true,
+              "default": "127.0.0.0/8,::1/128"
+            }
+          }
+        ]
+      },
+      "group": "Application"
+    },
+    {
+      "variable": "network",
+      "label": "Network",
+      "schema": {
+        "type": "dict",
+        "attrs": [
+          {
+            "variable": "web_port",
+            "label": "WebUI port",
+            "schema": {
+              "type": "dict",
+              "attrs": [
+                {
+                  "variable": "bind_mode",
+                  "label": "Bind mode",
+                  "schema": {
+                    "type": "string",
+                    "default": "published",
+                    "hidden": true,
+                    "enum": [
+                      {
+                        "value": "published",
+                        "description": "Publish"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "variable": "port_number",
+                  "label": "Port",
+                  "schema": {
+                    "type": "int",
+                    "min": 1,
+                    "max": 65535,
+                    "default": 32176,
+                    "required": true
+                  }
+                },
+                {
+                  "variable": "host_ips",
+                  "label": "Host IPs",
+                  "schema": {
+                    "type": "list",
+                    "default": [],
+                    "items": [
+                      {
+                        "variable": "host_ip",
+                        "label": "Host IP",
+                        "schema": {
+                          "type": "string",
+                          "required": true,
+                          "$ref": [
+                            "definitions/node_bind_ip"
+                          ]
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "group": "Network"
+    },
+    {
+      "variable": "storage",
+      "label": "Storage",
+      "schema": {
+        "type": "dict",
+        "attrs": [
+          {
+            "variable": "data",
+            "label": "Data",
+            "schema": {
+              "type": "dict",
+              "attrs": [
+                {
+                  "variable": "type",
+                  "label": "Storage type",
+                  "schema": {
+                    "type": "string",
+                    "default": "ix_volume",
+                    "required": true,
+                    "enum": [
+                      {
+                        "value": "ix_volume",
+                        "description": "ixVolume"
+                      },
+                      {
+                        "value": "host_path",
+                        "description": "Existing assigned directory"
+                      }
+                    ]
+                  }
+                },
+                {
+                  "variable": "ix_volume_config",
+                  "label": "ixVolume configuration",
+                  "schema": {
+                    "type": "dict",
+                    "show_if": [
+                      [
+                        "type",
+                        "=",
+                        "ix_volume"
+                      ]
+                    ],
+                    "$ref": [
+                      "normalize/ix_volume"
+                    ],
+                    "attrs": [
+                      {
+                        "variable": "dataset_name",
+                        "label": "Dataset",
+                        "schema": {
+                          "type": "string",
+                          "required": true,
+                          "hidden": true,
+                          "default": "data"
+                        }
+                      },
+                      {
+                        "variable": "acl_enable",
+                        "label": "Enable ACL",
+                        "schema": {
+                          "type": "boolean",
+                          "default": false
+                        }
+                      },
+                      {
+                        "variable": "acl_entries",
+                        "label": "ACL configuration",
+                        "schema": {
+                          "type": "dict",
+                          "show_if": [
+                            [
+                              "acl_enable",
+                              "=",
+                              true
+                            ]
+                          ],
+                          "attrs": []
+                        }
+                      }
+                    ]
+                  }
+                },
+                {
+                  "variable": "host_path_config",
+                  "label": "Host path configuration",
+                  "schema": {
+                    "type": "dict",
+                    "show_if": [
+                      [
+                        "type",
+                        "=",
+                        "host_path"
+                      ]
+                    ],
+                    "attrs": [
+                      {
+                        "variable": "acl_enable",
+                        "label": "Enable ACL",
+                        "schema": {
+                          "type": "boolean",
+                          "default": false
+                        }
+                      },
+                      {
+                        "variable": "acl",
+                        "label": "ACL configuration",
+                        "schema": {
+                          "type": "dict",
+                          "show_if": [
+                            [
+                              "acl_enable",
+                              "=",
+                              true
+                            ]
+                          ],
+                          "attrs": [],
+                          "$ref": [
+                            "normalize/acl"
+                          ]
+                        }
+                      },
+                      {
+                        "variable": "path",
+                        "label": "Host path",
+                        "schema": {
+                          "type": "hostpath",
+                          "show_if": [
+                            [
+                              "acl_enable",
+                              "=",
+                              false
+                            ]
+                          ],
+                          "required": true
+                        }
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "group": "Storage",
+      "description": "Grant UID/GID 10001 write access to this dedicated directory in TrueNAS storage settings. The app never changes ACLs or ownership."
+    },
+    {
+      "variable": "resources",
+      "label": "Resources",
+      "schema": {
+        "type": "dict",
+        "attrs": [
+          {
+            "variable": "limits",
+            "label": "Limits",
+            "schema": {
+              "type": "dict",
+              "attrs": [
+                {
+                  "variable": "cpus",
+                  "label": "CPUs",
+                  "schema": {
+                    "type": "int",
+                    "default": 2,
+                    "min": 1,
+                    "required": true
+                  }
+                },
+                {
+                  "variable": "memory",
+                  "label": "Memory (MiB)",
+                  "schema": {
+                    "type": "int",
+                    "default": 512,
+                    "min": 256,
+                    "required": true
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      },
+      "group": "Resources"
+    }
+  ]
+}

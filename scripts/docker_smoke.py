@@ -12,6 +12,7 @@ import uuid
 import ipaddress
 import socket
 import tempfile
+import tomllib
 
 import httpx
 
@@ -20,6 +21,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--keep', action='store_true')
     parser.add_argument('--broker', action='store_true', help='Also exercise the isolated display broker')
+    parser.add_argument('--image', help='Test this already built full image instead of rebuilding')
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     project = 'openscreen-check-' + uuid.uuid4().hex[:8]
@@ -35,6 +37,11 @@ def main():
 
     # Resolve paths before writing a disposable configuration outside the checkout.
     resolved = json.loads(run(*compose, 'config', '--format', 'json'))
+    if args.image:
+        for name in ('openscreen', 'display-broker'):
+            if name in resolved['services']:
+                resolved['services'][name]['image'] = args.image
+                resolved['services'][name].pop('build', None)
     networks = run('docker', 'network', 'ls', '-q').split()
     occupied = []
     if networks:
@@ -67,6 +74,8 @@ def main():
             assert client.get('/').status_code == 200
             assert client.get('/static/app.js').status_code == 200
             assert client.get('/api/editor/catalog').status_code == 200
+            version = tomllib.loads((root / 'pyproject.toml').read_text(encoding='utf-8'))['project']['version']
+            assert client.get('/api/status').raise_for_status().json()['version'] == version
             config = client.get('/api/config').raise_for_status().json()
             assert client.put('/api/config', json=config).status_code == 403
             config['sources'].append(dict(id='docker-local', name='Docker lokal', kind='docker',

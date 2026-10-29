@@ -7,7 +7,15 @@ provides configuration, a visual editor, and a live preview.
 
 This is an independent project, not an official AOOSTAR application.
 
-**Release: 1.0.1.** Container operation and automated tests have been
+**Catalog preparation (unreleased):** A separate [browser-only distribution](catalog/README.md)
+is being prepared for TrueNAS Community review. It has no NAS management API,
+telemetry collectors, USB transport, broker, or Docker socket access. The full
+Docker application described below remains separate. Catalog inclusion is not
+approved; see the [catalog status](catalog/STATUS.md) for open gates.
+
+Project-owned code is licensed under the [MIT License](LICENSE).
+
+**Version: 1.0.2.** Container operation and automated tests have been
 verified. Physical display output and live TrueNAS/Proxmox integration still need
 validation. The current web interface is in German.
 
@@ -34,7 +42,7 @@ Release images are published to
 for **linux/amd64**. The versioned tag is recommended for deployments:
 
 ```sh
-docker pull ghcr.io/niklas-s04/aoostar-openscreen:1.0.1
+docker pull ghcr.io/niklas-s04/aoostar-openscreen:1.0.2
 ```
 
 The `latest` tag follows the most recently published release. An initial package
@@ -45,25 +53,27 @@ For the supplied local Compose files, tag the downloaded image locally and skip
 building:
 
 ```sh
-docker tag ghcr.io/niklas-s04/aoostar-openscreen:1.0.1 aoostar-openscreen:local
+docker tag ghcr.io/niklas-s04/aoostar-openscreen:1.0.2 aoostar-openscreen:local
 docker compose up -d --no-build
 ```
 
-Release tags trigger `.github/workflows/docker-publish.yml` for Docker Hub and
-GHCR. The separate `.github/workflows/package.yml` is a manual GHCR-only option
-for an existing release tag, with non-root import and application startup checks.
-Do not run both publishers for the same release simultaneously. GHCR publication
-uses the repository's temporary `GITHUB_TOKEN`; Docker Hub uses the repository's
-`DOCKERHUB_TOKEN` secret, never a password committed to this repository.
+Release tags trigger one `.github/workflows/docker-publish.yml` publisher for
+Docker Hub and GHCR. It checks versions, runs the tests, verifies reproducible
+builds and the exact image, and blocks Critical/High scanner findings. Both
+registries receive the same image; anonymous access and matching content are
+verified before `latest` and the GitHub release are published. GHCR uses the
+temporary `GITHUB_TOKEN`; Docker Hub uses the repository's `DOCKERHUB_TOKEN`
+secret. The separate catalog publisher remains manual and does not run on a
+full Docker release. See the [changelog](CHANGELOG.md).
 
 ### Build from source
 
-To build the versioned 1.0.1 image from this release:
+To build the versioned 1.0.2 image from this release:
 
 ```sh
-git clone --branch v1.0.1 --depth 1 https://github.com/Niklas-s04/aoostar-openscreen.git
+git clone --branch v1.0.2 --depth 1 https://github.com/Niklas-s04/aoostar-openscreen.git
 cd aoostar-openscreen
-docker build -t aoostar-openscreen:1.0.1 -t aoostar-openscreen:local .
+docker build -t aoostar-openscreen:1.0.2 -t aoostar-openscreen:local .
 ```
 
 The `local` tag is used by the supplied Compose and TrueNAS YAML files. Building

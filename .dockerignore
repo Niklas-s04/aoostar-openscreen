@@ -1,6 +1,7 @@
 *
 !pyproject.toml
 !uv.lock
+!LICENSE
 !openscreen/
 !openscreen/**
 openscreen/**/__pycache__/

@@ -95,8 +95,12 @@ def test_editor_drafts_interactions_and_media(demo_server):
         page.get_by_role('button', name='Mein Display Text').click()
         expect(page.get_by_label('Text', exact=True)).to_have_value('Mein Display')
         page.get_by_label('Text', exact=True).fill('Verwerfen')
-        page.once('dialog', lambda dialog: dialog.dismiss())
-        page.get_by_role('link', name='Datenquellen', exact=True).click()
+        # hashchange is asynchronous: wait for its confirmation before installing
+        # the next dialog handler, otherwise both handlers consume the same dialog.
+        with page.expect_event('dialog') as navigation_dialog:
+            page.get_by_role('link', name='Datenquellen', exact=True).click()
+        navigation_dialog.value.dismiss()
+        expect(page).to_have_url(demo_server + '/#display')
         expect(page.get_by_label('Text', exact=True)).to_have_value('Verwerfen')
         page.once('dialog', lambda dialog: dialog.accept())
         page.get_by_role('button', name='Verwerfen', exact=True).click()

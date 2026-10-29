@@ -1,0 +1,3 @@
+'use strict';
+let previous=null;
+async function refresh(){let delay=1000;try{const response=await fetch('/api/output.png',{cache:'no-store',signal:AbortSignal.timeout(15000)});if(!response.ok)throw Error();const url=URL.createObjectURL(await response.blob());const frame=new Image();frame.src=url;try{await frame.decode();}catch(error){URL.revokeObjectURL(url);throw error;}document.querySelector('#output').src=url;if(previous)URL.revokeObjectURL(previous);previous=url;document.querySelector('#player-status').textContent='';}catch(error){document.querySelector('#player-status').textContent='Verbindung unterbrochen. Neuer Versuch …';delay=5000;}setTimeout(refresh,delay);}refresh();

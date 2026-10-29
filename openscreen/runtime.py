@@ -1,4 +1,5 @@
 from concurrent.futures import ThreadPoolExecutor
+from . import __version__
 import json
 import os
 from pathlib import Path
@@ -162,7 +163,7 @@ class Runtime:
         if config.output.kind == 'browser':
             display.update(state='player',error='')
         trial = self.active_trial()
-        return {'demo':self.demo,'page':self.page(config,now),'sources':sources,'alerts':alerts,'display':display,'trial':trial.status() if trial else None,'uptime':now-self.started,'now':now,'version':'1.0.1'}
+        return {'demo':self.demo,'page':self.page(config,now),'sources':sources,'alerts':alerts,'display':display,'trial':trial.status() if trial else None,'uptime':now-self.started,'now':now,'version':__version__}
 
     def image(self, page=None, draft=None, output_config=None):
         config,snapshots,alerts,now=self.state()

@@ -1,0 +1,52 @@
+name: Catalog distribution checks
+on:
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  application:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: '0.13.3'
+      - run: uv sync --frozen
+      - run: uv run playwright install --with-deps chromium
+      - run: uv run pytest -q
+      - run: uv sync --project catalog --frozen
+      - run: uvx pip-audit --path catalog/.venv/lib/python3.13/site-packages --progress-spinner off
+      - run: uv run python scripts/catalog_reproducibility_test.py
+      - run: uv run python scripts/catalog_container_test.py
+  upstream:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          repository: truenas/apps
+          ref: ea9e6a18c58031ee9ecb850390c56ac48c819230
+          path: upstream
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: '0.13.3'
+      - run: cp -R catalog/ix-dev/community/aoostar-openscreen upstream/ix-dev/community/
+      - working-directory: upstream
+        run: uv run .github/scripts/port_validation.py
+      - working-directory: upstream
+        run: uv run .github/scripts/generate_metadata.py --app aoostar-openscreen --train community
+      - name: Provision disposable runner storage (never runs on a NAS)
+        run: sudo install -d -m 0700 -o 10001 -g 10001 /opt/tests/aoostar-openscreen/data /opt/tests/aoostar-openscreen/hostpath
+      - working-directory: upstream
+        run: |
+          for scenario in basic-values.yaml hostpath-values.yaml; do
+            uv run .github/scripts/ci.py --app aoostar-openscreen --train community --test-file "$scenario" --render-only=true
+            docker compose -f ix-dev/community/aoostar-openscreen/templates/rendered/docker-compose.yaml config --format json > rendered.json
+            source=$(python -c 'import json; print(json.load(open("rendered.json"))["services"]["openscreen"]["volumes"][0]["source"])')
+            uv run python ../scripts/check_catalog_compose.py rendered.json --data-source "$source"
+            uv run .github/scripts/ci.py --app aoostar-openscreen --train community --test-file "$scenario"
+          done
+# Official integration intentionally remains a release gate: it requires the
+# approved public catalog image and correctly provisioned disposable data paths.
+# No skip-metadata, continue-on-error, disabled assertions, or auto-publication.

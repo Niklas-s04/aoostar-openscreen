@@ -1,0 +1,27 @@
+app_version: 1.0.2
+capabilities: []
+categories:
+- productivity
+date_added: '2026-10-28'
+description: Browser-only canvas editor and network player. No NAS telemetry or USB
+  display control.
+home: https://github.com/Niklas-s04/aoostar-openscreen
+host_mounts: []
+icon: ''
+keywords:
+- display
+- canvas
+lib_version: 2.3.17
+lib_version_hash: b02a8040f1971a601638300b595bbd5b72f0664ba13fdf7759c212867caeed24
+maintainers:
+- email: dev@truenas.com
+  name: truenas
+  url: https://www.truenas.com/
+name: aoostar-openscreen
+run_as_context: []
+screenshots: []
+sources:
+- https://github.com/Niklas-s04/aoostar-openscreen
+title: AOOSTAR OpenScreen (Browser)
+train: community
+version: 1.0.0

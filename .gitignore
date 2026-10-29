@@ -6,10 +6,16 @@ data/
 original-files/
 analysis/
 design/
-# Publish the README and general installation guide, not working notes.
-/*.md
-!/README.md
-!/TRUENAS.md
+# Local working notes and generated validation output; keep product docs visible.
+/.local/
+/catalog/REPORT.md
+/catalog/RELEASE-REPORT.md
+/catalog/COMPLIANCE.md
+/catalog/MAINTAINER-REQUEST.md
+/catalog/PR-DESCRIPTION.md
+/catalog/*-rendered.yaml
+/catalog/*.sarif
+**/templates/rendered/
 .env
 secrets/
 *.tar
@@ -19,6 +25,8 @@ docs/LOCAL_DOCKER.md
 .codex/
 docs/
 artifacts/
+*.log
+*.py[cod]
 
 # Local environment, credentials and generated files
 .env.*

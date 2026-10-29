@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="OpenScreen browser canvas">
+  <rect x="8" y="27" width="112" height="65" rx="8" fill="#101012" stroke="#7dd3fc" stroke-width="5"/>
+  <rect x="19" y="39" width="40" height="40" rx="4" fill="#164e63"/>
+  <path d="M70 45h36M70 58h27M70 71h31M49 105h30M64 94v11" stroke="#7dd3fc" stroke-width="5" stroke-linecap="round"/>
+</svg>

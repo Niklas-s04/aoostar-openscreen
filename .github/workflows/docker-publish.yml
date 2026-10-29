@@ -1,62 +1,95 @@
-
-name: Publish Docker Images
+name: Publish verified Docker release
 
 on:
   push:
-    tags:
-      - "v*"
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
-        description: "Release tag"
+        description: Existing approved full Docker release tag
         required: true
-        default: "v1.0.1"
+        default: v1.0.2
 
 permissions:
-  contents: read
+  contents: write
   packages: write
+
+concurrency:
+  group: full-docker-release
+  cancel-in-progress: false
 
 jobs:
   publish:
-    runs-on: ubuntu-latest
-
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+      IMAGE: ghcr.io/niklas-s04/aoostar-openscreen
+      HUB_IMAGE: niklass2004/aoostar-openscreen
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Validate requested tag
+        run: '[[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]'
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ inputs.tag || github.ref_name }}
-
-      - name: Determine version
-        id: version
-        env:
-          RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+          ref: refs/tags/${{ inputs.tag || github.ref_name }}
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e # v6
+        with:
+          version: '0.13.3'
+      - run: uv sync --frozen
+      - name: Validate source and version
         run: |
-          echo "value=${RELEASE_TAG#v}" >> "$GITHUB_OUTPUT"
-
-      - name: Set up Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Docker Hub login
-        uses: docker/login-action@v4
+          uv run python scripts/release_check.py "$RELEASE_TAG"
+          echo "VERSION=${RELEASE_TAG#v}" >> "$GITHUB_ENV"
+      - run: uv run playwright install --with-deps chromium
+      - run: uv run pytest -q
+      - run: uvx pip-audit --path .venv/lib/python3.13/site-packages --progress-spinner off
+      - name: Build the full image twice and verify reproducibility
+        run: uv run python scripts/catalog_reproducibility_test.py --dockerfile Dockerfile --image "$IMAGE:$VERSION" --epoch 1793232000
+      - name: Verify private-source permissions
+        run: uv run python scripts/docker_permissions_check.py
+      - name: Test the exact release image
+        run: uv run python scripts/docker_smoke.py --image "$IMAGE:$VERSION"
+      - name: Block critical and high vulnerabilities
+        uses: docker/scout-action@4bbf17a9da65a7b5497361bb407e88cc9548f69c # v1
+        with:
+          command: cves
+          image: local://${{ env.IMAGE }}:${{ env.VERSION }}
+          only-severities: critical,high
+          exit-code: true
+          write-comment: false
+          dockerhub-user: niklass2004
+          dockerhub-password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
         with:
           username: niklass2004
           password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: GitHub Registry login
-        uses: docker/login-action@v4
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          platforms: linux/amd64
-          push: true
-          tags: |
-            niklass2004/aoostar-openscreen:${{ steps.version.outputs.value }}
-            niklass2004/aoostar-openscreen:latest
-            ghcr.io/niklas-s04/aoostar-openscreen:${{ steps.version.outputs.value }}
-            ghcr.io/niklas-s04/aoostar-openscreen:latest
+      - name: Publish the same tested image to both registries
+        run: |
+          docker tag "$IMAGE:$VERSION" "$HUB_IMAGE:$VERSION"
+          docker push "$IMAGE:$VERSION"
+          docker push "$HUB_IMAGE:$VERSION"
+      - name: Verify anonymous access, version, architecture and matching images
+        run: uv run python scripts/verify_public_images.py "$VERSION"
+      - name: Update full Docker latest aliases
+        run: |
+          docker tag "$IMAGE:$VERSION" "$IMAGE:latest"
+          docker tag "$IMAGE:$VERSION" "$HUB_IMAGE:latest"
+          docker push "$IMAGE:latest"
+          docker push "$HUB_IMAGE:latest"
+      - name: Publish the GitHub release after registry verification
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Release already exists; leaving its notes unchanged."
+          else
+            gh release create "$RELEASE_TAG" --verify-tag --title "AOOSTAR OpenScreen $VERSION" --notes-file CHANGELOG.md
+          fi
+# This workflow publishes only the full Docker distribution. The unapproved
+# browser-only catalog image has a separate manual workflow and is not released.
